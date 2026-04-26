@@ -155,7 +155,9 @@ Full asset details and licenses are in ASSETS.md.
 
 # License
 
-Aspyria is available under terms of GNU General Public License v3.
+Aspyria source code is available under terms of GNU General Public License v3.
+
+Game music is available under terms of Suno Terms of Service, meaning re-distribution of the game on commercial basis with the music included is prohibited.
 
 # Contributing
 
