@@ -96,7 +96,9 @@ You then spend the gold in the permanent upgrade menu (with half-cost refunds av
 
 # Permanent Menu (Meta Progression):
 
-Accessed between runs. Here you can:Spend gold on permanent upgrades.
+Accessed between runs. Here you can:
+
+Spend gold on permanent upgrades.
 
 Refund upgrades at half cost.
 
@@ -107,31 +109,18 @@ View your relic collection and current build power.
 # Game Features (v1):
 
 - Endless location loop with scaling difficulty
-- 
 - Gear-defined builds instead of classes
-- 
 - Automated combat with attack/flee and detailed logs
-- 
 - Level-up stat choices + milestone/boss perks
-- 
 - Location-based iLvl ranges + gear advantage bonuses
-- 
 - Named relic effects (level rewards, fleeing, boss perks, necromancer loot)
-- 
 - Full item sets with weak partial bonuses and huge complete-set bonuses
-- 
 - Permanent menu upgrades with half-cost refunds
-- 
 - Limited (and expandable) inventory slots
-- 
 - Coins (run-only) vs Gold (permanent)
-- 
 - Post-fight enhancement choices and story dialogue
-- 
 - Wishing well events with strong buffs and painful trade-offs
-- 
 - Crafting table (quality improvement + 3-to-1 fusion)
-- 
 - Four-step defeat curse progression
 
 # Modding
