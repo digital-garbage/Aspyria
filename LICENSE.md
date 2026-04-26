@@ -1,8 +1,8 @@
 # Aspyria Source-Available Noncommercial License
 
-Copyleft 2026. DigitalGarbage & ChatGPT Codex
+Copyright © 2026 DigitalGarbage
 
-This license applies to the Aspyria source code, game logic, bundled original text, and project files unless a file says otherwise.
+This license applies to the Aspyria source code, game logic, bundled original text, and project files unless stated otherwise.
 
 ## 1. Rights You Have
 
@@ -16,17 +16,19 @@ You may feature Aspyria, its gameplay, and its code in social media, videos, liv
 
 You may sell access to services that let users play or modify Aspyria, as long as you are not selling Aspyria itself, a copy of Aspyria, modified Aspyria builds, or derivative software based on Aspyria code.
 
-Any publicly available derivative work, modified version, fork, or build based on Aspyria (or any portion of its code, assets, or content released under this license) must be released under the exact same terms of this license, including the non-commercial restrictions. Mods, plugins, additional content, or data files created using Aspyria’s official modding system (e.g. files placed in the `mods/` directory or using the provided modding API) do **not** fall under the terms of this license. The author of such modifications may license and distribute them under any terms they choose, including commercial or permissive licenses.
+Any publicly available derivative work, modified version, fork, or build based on Aspyria (or any portion of its code, assets, or content released under this license) must be released under the exact same terms of this license, including the non-commercial restrictions. 
+
+Mods, plugins, additional content, or data files created using Aspyria’s official modding system (e.g. files placed in the `mods/` directory or using the provided modding API) do **not** fall under the terms of this license. The author of such modifications may license and distribute them under any terms they choose, including commercial or permissive licenses.
 
 ## 2. Commercial Use That Is Not Allowed
 
-You may not sell the original Aspyria code or game copy.
+You shall not sell the original Aspyria code or game copy.
 
-You may not sell modified versions, forks, builds, or ports of Aspyria.
+You shall not sell modified versions, forks, builds, or ports of Aspyria.
 
-You may not sell derivative software based on original or modified Aspyria code.
+You shall not sell derivative software based on original or modified Aspyria code.
 
-You may not bundle Aspyria into a paid software product, paid game collection, paid launcher, paid marketplace item, subscription software package, or other commercial software distribution without written permission from the original authors.
+You shall not bundle Aspyria or its derivative works into a paid software product, paid game collection, paid launcher, paid marketplace item, subscription software package, or other commercial software distribution without written permission from the original authors.
 
 ## 3. Notices
 
