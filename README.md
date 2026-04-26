@@ -155,11 +155,7 @@ Full asset details and licenses are in ASSETS.md.
 
 # License
 
-Aspyria is source-available under a custom Aspyria Source-Available Noncommercial License. The main difference from GPL, MIT, BSD and similar licences: if shortly, you are fine doing whatever you want with the game and the code unless you are trying to sell the original code or your modifications of this code, or using original code as a base for commercial product.
-
-Full legal text: LICENSE.md 
-
-Human-readable commercial-use summary: COMMERCIAL_USE.md
+Aspyria is available under terms of GNU General Public License v3.
 
 # Contributing
 
