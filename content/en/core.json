@@ -1,0 +1,260 @@
+{
+  "story": {
+    "intro": "The bells of Highcrown ring over a starving kingdom. Aspyria is at war, and the King's army is breaking against cursed necromancers from the eastern barrows. The King names you his chosen blade: end the curse, break the dead host, and bring the dawn back to Aspyria."
+  },
+  "base_stats": {
+    "ATK": 12.0,
+    "CR%": 5.0,
+    "CD%": 50.0,
+    "HP": 100.0,
+    "Luck%": 0.0,
+    "Evasion%": 3.0,
+    "Multi-Attack Chance%": 0.0,
+    "Megacrit Chance%": 1.0,
+    "Megacrit Damage%": 150.0,
+    "XP Boost%": 0.0,
+    "Enemy Scaling%": 0.0,
+    "Coin Acquisition Boost%": 0.0
+  },
+  "upgrade_base_costs": {
+    "ATK": 4,
+    "CR%": 6,
+    "CD%": 6,
+    "HP": 4,
+    "Luck%": 6,
+    "Evasion%": 8,
+    "Multi-Attack Chance%": 8,
+    "Megacrit Chance%": 10,
+    "Megacrit Damage%": 10,
+    "XP Boost%": 6,
+    "Enemy Scaling%": 4,
+    "Coin Acquisition Boost%": 6
+  },
+  "rarity_multipliers": {
+    "common": 1.0,
+    "uncommon": 1.35,
+    "rare": 1.9,
+    "mythical": 2.8,
+    "legendary": 4.2,
+    "corrupted": 6.2
+  },
+  "quality_multipliers": {
+    "trash": 0.65,
+    "worn": 0.82,
+    "used": 1.0,
+    "polished": 1.18,
+    "new": 1.38,
+    "special craft": 1.75
+  },
+  "slot_stat_pools": {
+    "weapon": ["ATK", "CR%", "CD%", "Megacrit Chance%", "Megacrit Damage%"],
+    "armor": ["HP", "Evasion%", "Enemy Scaling%"],
+    "charm": ["Luck%", "XP Boost%", "Coin Acquisition Boost%", "Megacrit Chance%"],
+    "boots": ["Evasion%", "Multi-Attack Chance%", "Luck%"],
+    "ring": ["CR%", "CD%", "Coin Acquisition Boost%", "Multi-Attack Chance%"],
+    "relic": ["Megacrit Damage%", "Enemy Scaling%", "XP Boost%", "HP"]
+  },
+  "rarity_names": {
+    "common": ["Dented", "Militia", "Weathered", "Plain"],
+    "uncommon": ["Oathbound", "Silvered", "Lionmarked", "Restless"],
+    "rare": ["Royal", "Sunforged", "Blessed", "Gravebane"],
+    "mythical": ["Saint-Sung", "Star-Iron", "Dawnlit", "Moon-Vowed"],
+    "legendary": ["King's", "Last", "Crownfire", "Perfect"],
+    "corrupted": ["Cursed", "Black-Blood", "Bonecrowned", "Unhallowed"]
+  },
+  "slot_names": {
+    "weapon": ["Sword", "Axe", "Spear", "Warhammer"],
+    "armor": ["Cuirass", "Mail", "Brigandine", "Plate"],
+    "charm": ["Talisman", "Prayer", "Seal", "Medal"],
+    "boots": ["Greaves", "Sabatons", "Marchers", "Striders"],
+    "ring": ["Ring", "Signet", "Band", "Loop"],
+    "relic": ["Reliquary", "Banner Shard", "Compass", "Lens"]
+  },
+  "sets": {
+    "Highcrown Vanguard": {
+      "name": "Highcrown Vanguard",
+      "required_slots": ["armor", "boots", "charm"],
+      "partial_stat": "Evasion%",
+      "partial_bonus": 3,
+      "full_bonuses": {"Evasion%": 50}
+    },
+    "Sunblade Oath": {
+      "name": "Sunblade Oath",
+      "required_slots": ["weapon", "ring", "relic"],
+      "partial_stat": "CR%",
+      "partial_bonus": 3,
+      "full_bonuses": {"CR%": 28, "CD%": 70, "Megacrit Chance%": 6}
+    },
+    "Saintwall Plate": {
+      "name": "Saintwall Plate",
+      "required_slots": ["armor", "boots", "relic"],
+      "partial_stat": "HP",
+      "partial_bonus": 8,
+      "full_bonuses": {"HP": 160, "Damage Reduction%": 18}
+    },
+    "Choir of Dawn": {
+      "name": "Choir of Dawn",
+      "required_slots": ["weapon", "charm", "ring", "relic"],
+      "partial_stat": "Multi-Attack Chance%",
+      "partial_bonus": 3,
+      "full_bonuses": {"Multi-Attack Chance%": 38, "XP Boost%": 35}
+    },
+    "Royal Tithe Regalia": {
+      "name": "Royal Tithe Regalia",
+      "required_slots": ["charm", "boots", "ring"],
+      "partial_stat": "Coin Acquisition Boost%",
+      "partial_bonus": 4,
+      "full_bonuses": {"Coin Acquisition Boost%": 80, "Gold Payout%": 25, "Enemy Scaling%": 12}
+    },
+    "Necromancer Crown": {
+      "name": "Necromancer Crown",
+      "required_slots": ["weapon", "armor", "charm", "boots", "ring", "relic"],
+      "partial_stat": "Megacrit Damage%",
+      "partial_bonus": 10,
+      "full_bonuses": {"Megacrit Damage%": 350, "Megacrit Chance%": 18, "Damage Taken%": 20},
+      "drawback": "Full set makes incoming damage 20% higher."
+    }
+  },
+  "relics": {
+    "kings_lens": {
+      "name": "King's Lens",
+      "effect_id": "favored_stat_bias",
+      "description": "Level-up choices are more likely to include your favored stat.",
+      "params": {"chance": 0.45}
+    },
+    "royal_drillmark": {
+      "name": "Royal Drillmark",
+      "effect_id": "level_reward_multiplier",
+      "description": "Normal level-up stat choices are stronger.",
+      "params": {"multiplier": 2.0}
+    },
+    "saints_refuge": {
+      "name": "Saint's Refuge",
+      "effect_id": "flee_protection",
+      "description": "Once per run, reduces the price of fleeing.",
+      "params": {"charges": 1}
+    },
+    "war_banner_shard": {
+      "name": "War Banner Shard",
+      "effect_id": "boss_perk_improvement",
+      "description": "Boss perk choices are improved.",
+      "params": {"multiplier": 1.25}
+    },
+    "graveglass_compass": {
+      "name": "Graveglass Compass",
+      "effect_id": "necromancer_loot_bonus",
+      "description": "Improves loot odds after necromancer fights.",
+      "params": {"chance": 0.12}
+    }
+  },
+  "level_rewards": {
+    "atk_drill": {"title": "Sword Drill", "stat": "ATK", "amount": 4.0, "weight": 1},
+    "hp_oath": {"title": "Warrior's Oath", "stat": "HP", "amount": 10.0, "weight": 1},
+    "crit_focus": {"title": "Killing Focus", "stat": "CR%", "amount": 2.0, "weight": 1},
+    "crit_damage": {"title": "Execution Form", "stat": "CD%", "amount": 5.0, "weight": 1},
+    "evasion_step": {"title": "Shield-Step", "stat": "Evasion%", "amount": 1.5, "weight": 1},
+    "luck_prayer": {"title": "Prayer for Spoils", "stat": "Luck%", "amount": 2.0, "weight": 1},
+    "multi_attack": {"title": "Second Swing", "stat": "Multi-Attack Chance%", "amount": 1.8, "weight": 1},
+    "megacrit_chance": {"title": "Doom Glimpse", "stat": "Megacrit Chance%", "amount": 1.0, "weight": 1},
+    "megacrit_damage": {"title": "Doom Followthrough", "stat": "Megacrit Damage%", "amount": 7.0, "weight": 1},
+    "xp_boost": {"title": "Battle Memory", "stat": "XP Boost%", "amount": 3.0, "weight": 1},
+    "coin_boost": {"title": "Royal Claim", "stat": "Coin Acquisition Boost%", "amount": 3.0, "weight": 1}
+  },
+  "perks": {
+    "field_mender": {"title": "Field Mender", "effect": "post_fight_heal_bonus", "params": {"heal_bonus": 0.04}},
+    "spoils_sense": {"title": "Spoils Sense", "effect": "loot_bonus", "params": {"chance": 0.08}},
+    "royal_purse": {"title": "Royal Purse", "effect": "bonus_coins", "params": {"coins": 60}},
+    "broad_training": {"title": "Broad Training", "effect": "extra_level_option", "params": {"extra_options": 1}},
+    "last_retreat": {"title": "Last Retreat", "effect": "flee_protection", "params": {"charges": 1}}
+  },
+  "enemies": {
+    "Grave Thrall": {
+      "name": "Grave Thrall", "family": "Necromancers", "base_hp": 46, "base_atk": 7, "xp": 18, "coins": 15, "abilities": ["bleed"],
+      "dialogue": {"intro": "A Grave Thrall drags itself from the mud, still wearing a soldier's ring.", "attack": "The Grave Thrall claws at your shield.", "defense": "The Grave Thrall folds under your strike and rises again.", "player_victory": "The Grave Thrall falls quiet.", "player_loss": "The Grave Thrall kneels over you, waiting for the curse to finish its work."}
+    },
+    "Bone Pike Acolyte": {
+      "name": "Bone Pike Acolyte", "family": "Necromancers", "base_hp": 58, "base_atk": 8, "xp": 21, "coins": 18, "abilities": ["rage"],
+      "dialogue": {"intro": "A Bone Pike Acolyte points a white spear at your heart.", "attack": "The acolyte thrusts with both hands.", "defense": "The acolyte hides behind a ribbed ward.", "player_victory": "The acolyte's spear snaps.", "player_loss": "The acolyte whispers your name into the dirt."}
+    },
+    "Ash-Robed Hexer": {
+      "name": "Ash-Robed Hexer", "family": "Necromancers", "base_hp": 66, "base_atk": 9, "xp": 24, "coins": 22, "abilities": ["coin_pressure"],
+      "dialogue": {"intro": "An Ash-Robed Hexer smiles through a veil of corpse-smoke.", "attack": "The hexer throws a black charm.", "defense": "Ash swallows your blade's path.", "player_victory": "The hexer's charms scatter like dead moths.", "player_loss": "The hexer marks your armor for the carrion priests."}
+    },
+    "Barrow Knight": {
+      "name": "Barrow Knight", "family": "Necromancers", "base_hp": 124, "base_atk": 12, "xp": 68, "coins": 76, "abilities": ["rage", "bleed"], "boss": true,
+      "dialogue": {"intro": "The Barrow Knight rises beneath a cracked royal banner.", "boss_intro": "The Barrow Knight speaks through rusted teeth: 'The King sends children now?'", "attack": "The Barrow Knight carves a heavy arc.", "defense": "Old plate turns your edge aside.", "player_victory": "The Barrow Knight sinks to one knee and remembers the sun.", "boss_victory": "The King's scouts cheer from the hill. The western road is open.", "player_loss": "The Barrow Knight plants your banner in the grave-soil."}
+    },
+    "Crypt Archer": {
+      "name": "Crypt Archer", "family": "Necromancers", "base_hp": 80, "base_atk": 13, "xp": 35, "coins": 42, "abilities": ["evade"], "evasion_chance": 15,
+      "dialogue": {"intro": "A Crypt Archer draws a bow strung with hair.", "attack": "A black-fletched arrow cuts the air.", "defense": "The archer slips behind a broken angel statue.", "player_victory": "The bowstring breaks with a shriek.", "player_loss": "The archer lowers the bow only when you stop moving."}
+    },
+    "Bell-Tower Revenant": {
+      "name": "Bell-Tower Revenant", "family": "Necromancers", "base_hp": 96, "base_atk": 14, "xp": 38, "coins": 50, "abilities": ["coin_pressure"],
+      "dialogue": {"intro": "A Bell-Tower Revenant tolls a handbell with no clapper.", "attack": "The revenant's bell cracks against your helm.", "defense": "A bell note bends your strike away.", "player_victory": "The bell falls silent.", "player_loss": "The revenant tolls once for your death."}
+    },
+    "Moon-Bitten Scout": {
+      "name": "Moon-Bitten Scout", "family": "Necromancers", "base_hp": 88, "base_atk": 16, "xp": 40, "coins": 55, "abilities": ["evade", "loot_sense"], "evasion_chance": 18,
+      "dialogue": {"intro": "A Moon-Bitten Scout circles you with a stolen cavalry knife.", "attack": "The scout darts in low.", "defense": "The scout rolls beneath your guard.", "player_victory": "The scout collapses under the moon's pale stare.", "player_loss": "The scout whistles for the corpse wagons."}
+    },
+    "Choirmaster of Bones": {
+      "name": "Choirmaster of Bones", "family": "Necromancers", "base_hp": 230, "base_atk": 21, "xp": 115, "coins": 150, "abilities": ["evade", "coin_pressure"], "boss": true, "evasion_chance": 12,
+      "dialogue": {"intro": "The Choirmaster of Bones lifts a baton made from a saint's finger.", "boss_intro": "'Sing with us,' the Choirmaster says, and the dead open their mouths.", "attack": "A chorus of skulls hammers your thoughts.", "defense": "The Choirmaster steps through a curtain of bones.", "player_victory": "The dead choir breaks into dust.", "boss_victory": "Highcrown's priests reclaim the chapel bells.", "player_loss": "Your voice joins the choir."}
+    },
+    "Rot-Hound Pack": {
+      "name": "Rot-Hound Pack", "family": "Necromancers", "base_hp": 145, "base_atk": 21, "xp": 62, "coins": 70, "abilities": ["multi"], "multi_attack_chance": 35,
+      "dialogue": {"intro": "A Rot-Hound Pack bursts from the corpse grass.", "attack": "The pack tears at you from three sides.", "defense": "The hounds scatter and reform.", "player_victory": "The last hound burns away in grey sparks.", "player_loss": "The pack drags you toward the barrows."}
+    },
+    "Mirror Wight": {
+      "name": "Mirror Wight", "family": "Necromancers", "base_hp": 122, "base_atk": 24, "xp": 68, "coins": 76, "abilities": ["copy_crit"],
+      "dialogue": {"intro": "A Mirror Wight wears your face badly.", "attack": "The wight mimics your killing stance.", "defense": "The wight fractures into false reflections.", "player_victory": "The false face shatters.", "player_loss": "The wight walks away wearing your courage."}
+    },
+    "Mawplate Butcher": {
+      "name": "Mawplate Butcher", "family": "Necromancers", "base_hp": 160, "base_atk": 25, "xp": 72, "coins": 82, "abilities": ["armor_crack"],
+      "dialogue": {"intro": "A Mawplate Butcher drags a cleaver through sparks.", "attack": "The cleaver bites into your guard.", "defense": "The butcher laughs behind a jawbone visor.", "player_victory": "The butcher's cleaver sinks into the dirt.", "player_loss": "The butcher measures you for the feast pits."}
+    },
+    "Hollow Duke": {
+      "name": "Hollow Duke", "family": "Necromancers", "base_hp": 360, "base_atk": 32, "xp": 175, "coins": 260, "abilities": ["multi", "copy_crit"], "boss": true, "multi_attack_chance": 32,
+      "dialogue": {"intro": "The Hollow Duke bows with courtly grace.", "boss_intro": "'Tell my cousin the King I still hold court,' the Hollow Duke says.", "attack": "The Duke's paired blades flash twice.", "defense": "A dead courtier takes the blow for him.", "player_victory": "The Hollow Duke's crown rolls into the dust.", "boss_victory": "The King's army retakes the old court road.", "player_loss": "The Duke names you jester of his dead court."}
+    },
+    "Plague Ledger Priest": {
+      "name": "Plague Ledger Priest", "family": "Necromancers", "base_hp": 240, "base_atk": 33, "xp": 105, "coins": 145, "abilities": ["coin_pressure"],
+      "dialogue": {"intro": "A Plague Ledger Priest writes your debts in red ink.", "attack": "The priest snaps the ledger shut like a trap.", "defense": "Your strike vanishes into a page of names.", "player_victory": "The ledger burns page by page.", "player_loss": "The priest adds your breath to the debt."}
+    },
+    "Grave Ox": {
+      "name": "Grave Ox", "family": "Necromancers", "base_hp": 310, "base_atk": 38, "xp": 112, "coins": 130, "abilities": ["armor_crack"],
+      "dialogue": {"intro": "A Grave Ox lowers horns wrapped in funeral chains.", "attack": "The ox charges like a falling wall.", "defense": "The chains catch your weapon.", "player_victory": "The beast crashes down and does not rise.", "player_loss": "The ox tramples the King's seal into mud."}
+    },
+    "Funeral Pyre Choir": {
+      "name": "Funeral Pyre Choir", "family": "Necromancers", "base_hp": 260, "base_atk": 42, "xp": 125, "coins": 155, "abilities": ["rage", "multi"], "multi_attack_chance": 30,
+      "dialogue": {"intro": "The Funeral Pyre Choir sings in burning harmony.", "attack": "Flame and song lash your armor.", "defense": "Their hymn swallows the blow.", "player_victory": "The last note dies in ash.", "player_loss": "They sing you into the pyre."}
+    },
+    "Cinder Lich": {
+      "name": "Cinder Lich", "family": "Necromancers", "base_hp": 640, "base_atk": 52, "xp": 310, "coins": 430, "abilities": ["armor_crack", "rage"], "boss": true,
+      "dialogue": {"intro": "The Cinder Lich steps from a furnace of bones.", "boss_intro": "'Aspyria is already ash,' the Cinder Lich says. 'I merely teach it to kneel.'", "attack": "Cinder magic tears across your armor.", "defense": "The lich becomes a column of sparks.", "player_victory": "The Cinder Lich breaks apart in royal sunlight.", "boss_victory": "The foundries of Aspyria flare gold again.", "player_loss": "The lich brands your name into black iron."}
+    },
+    "Black Cache Angel": {
+      "name": "Black Cache Angel", "family": "Necromancers", "base_hp": 520, "base_atk": 64, "xp": 190, "coins": 250, "abilities": ["megacrit"], "corrupted": true,
+      "dialogue": {"intro": "A Black Cache Angel unfolds wings of locked coffins.", "attack": "A coffin-wing strikes like judgment.", "defense": "The angel seals itself behind a black lock.", "player_victory": "The locks open and release only dust.", "player_loss": "The angel files your soul away."}
+    },
+    "Root Psalmist": {
+      "name": "Root Psalmist", "family": "Necromancers", "base_hp": 560, "base_atk": 68, "xp": 205, "coins": 270, "abilities": ["multi", "evade"], "corrupted": true, "multi_attack_chance": 30, "evasion_chance": 15,
+      "dialogue": {"intro": "A Root Psalmist rises with thorns through its throat.", "attack": "Root and hymn lash together.", "defense": "The psalmist sinks into the root web.", "player_victory": "The hymn curdles into silence.", "player_loss": "Roots lace around your wrists."}
+    },
+    "Crowned Null": {
+      "name": "Crowned Null", "family": "Necromancers", "base_hp": 620, "base_atk": 74, "xp": 225, "coins": 310, "abilities": ["megacrit", "copy_crit"], "corrupted": true,
+      "dialogue": {"intro": "The Crowned Null arrives as an absence shaped like royalty.", "attack": "Nothingness strikes through the gap in your guard.", "defense": "Your weapon passes through a crown of shadow.", "player_victory": "The empty crown cracks.", "player_loss": "The Null removes your name from the world."}
+    },
+    "Dread Necromancer Veyr": {
+      "name": "Dread Necromancer Veyr", "family": "Necromancers", "base_hp": 1200, "base_atk": 92, "xp": 650, "coins": 850, "abilities": ["megacrit", "multi", "armor_crack"], "boss": true, "corrupted": true, "multi_attack_chance": 35,
+      "dialogue": {"intro": "Dread Necromancer Veyr waits beneath a sky of circling dead.", "boss_intro": "'The King gave you a sword,' Veyr says. 'I gave his dead soldiers purpose.'", "attack": "Veyr tears a curse through the battlefield.", "defense": "A wall of royal corpses takes your blow.", "player_victory": "Veyr's crown of bones breaks, and dawn spills over Aspyria.", "boss_victory": "The curse recoils. Aspyria breathes again, though darker roads remain.", "player_loss": "Veyr raises your shadow and sends it against Highcrown."}
+    }
+  },
+  "locations": [
+    {"name": "Highcrown Fields", "min_ilevel": 1, "max_ilevel": 5, "difficulty": 1.0, "fights_to_boss": 3, "enemy_names": ["Grave Thrall", "Bone Pike Acolyte", "Ash-Robed Hexer"], "boss_name": "Barrow Knight", "story": {"enter": "The war begins in the trampled fields below Highcrown."}},
+    {"name": "Chapel of Broken Bells", "min_ilevel": 4, "max_ilevel": 10, "difficulty": 1.55, "fights_to_boss": 3, "enemy_names": ["Crypt Archer", "Bell-Tower Revenant", "Moon-Bitten Scout"], "boss_name": "Choirmaster of Bones", "story": {"enter": "Broken bells hang over a chapel where the dead still sing."}},
+    {"name": "Old Court Road", "min_ilevel": 9, "max_ilevel": 16, "difficulty": 2.25, "fights_to_boss": 3, "enemy_names": ["Rot-Hound Pack", "Mirror Wight", "Mawplate Butcher"], "boss_name": "Hollow Duke", "story": {"enter": "The old road to the eastern court is lined with kneeling statues."}},
+    {"name": "Ashen Foundries", "min_ilevel": 15, "max_ilevel": 25, "difficulty": 3.35, "fights_to_boss": 3, "enemy_names": ["Plague Ledger Priest", "Grave Ox", "Funeral Pyre Choir"], "boss_name": "Cinder Lich", "story": {"enter": "The foundries burn with corpse-fire and stolen royal iron."}},
+    {"name": "Veyr's Black Citadel", "min_ilevel": 24, "max_ilevel": 40, "difficulty": 5.0, "fights_to_boss": 3, "enemy_names": ["Black Cache Angel", "Root Psalmist", "Crowned Null"], "boss_name": "Dread Necromancer Veyr", "story": {"enter": "At the edge of Aspyria, Veyr's citadel claws at the dawn."}}
+  ],
+  "encounters": []
+}

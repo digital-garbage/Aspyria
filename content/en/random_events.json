@@ -1,0 +1,62 @@
+{
+  "encounters": {
+    "ancient_restore": {
+      "id": "ancient_restore",
+      "trigger": "post_fight",
+      "handler": "ancient_restore",
+      "weight": 1.2,
+      "chance": 1.0,
+      "title": "Ancient Find",
+      "body": [
+        "You've uncovered an ancient relic of war. Try restoring it?",
+        "A half-buried weapon hums under the mud. It might still be saved."
+      ],
+      "choices": [
+        {"id": "restore", "label": "Try restoring it"},
+        {"id": "refuse", "label": "Keep it as found"}
+      ]
+    },
+    "bandit_toll": {
+      "id": "bandit_toll",
+      "trigger": "post_fight",
+      "handler": "bandit_toll",
+      "weight": 1.0,
+      "chance": 1.0,
+      "title": "Bandit's Toll",
+      "body": "A bandit blocks your way. He demands 90% of the coins in your possession.",
+      "params": {"toll_fraction": 0.9, "legendary_chance": 0.25},
+      "choices": [
+        {"id": "pay", "label": "Give him the coins"},
+        {"id": "fight", "label": "Fight him"}
+      ]
+    },
+    "pitfall": {
+      "id": "pitfall",
+      "trigger": "post_fight",
+      "handler": "pitfall",
+      "weight": 0.9,
+      "chance": 1.0,
+      "title": "Hidden Pit",
+      "body": "You lose ground under your feet and fall into a pit. Your legs hurt really much.",
+      "params": {"multiplier": 0.5, "fights": 3}
+    },
+    "old_monk": {
+      "id": "old_monk",
+      "trigger": "post_fight",
+      "handler": "old_monk",
+      "weight": 1.1,
+      "chance": 1.0,
+      "title": "Old Monk",
+      "body": "You've encountered an old monk. He shares his knowledge with you and wishes you good luck."
+    },
+    "wishing_well": {
+      "id": "wishing_well",
+      "trigger": "post_fight",
+      "handler": "wishing_well",
+      "weight": 0.7,
+      "chance": 1.0,
+      "title": "Wishing Well",
+      "body": "You found a wishing well. Ask carefully."
+    }
+  }
+}

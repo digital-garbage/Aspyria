@@ -1,0 +1,49 @@
+# Aspyria Source-Available Noncommercial License
+
+Copyleft 2026. DigitalGarbage & ChatGPT Codex
+
+This license applies to the Aspyria source code, game logic, bundled original text, and project files unless a file says otherwise.
+
+## 1. Rights You Have
+
+You may view, study, run, copy, modify, and share Aspyria for free.
+
+You may make private changes. You are not required to publish those changes, and nobody may force you to share modifications based on Aspyria.
+
+You may share free public forks, patches, and modified builds, as long as you follow this license.
+
+You may feature Aspyria, its gameplay, and its code in social media, videos, livestreams, articles, music, podcasts, tutorials, reviews, and other media. Monetization attached to that media is allowed.
+
+You may sell access to services that let users play or modify Aspyria, as long as you are not selling Aspyria itself, a copy of Aspyria, modified Aspyria builds, or derivative software based on Aspyria code.
+
+## 2. Commercial Use That Is Not Allowed
+
+You may not sell the original Aspyria code or game copy.
+
+You may not sell modified versions, forks, builds, or ports of Aspyria.
+
+You may not sell derivative software based on original or modified Aspyria code.
+
+You may not bundle Aspyria into a paid software product, paid game collection, paid launcher, paid marketplace item, subscription software package, or other commercial software distribution without written permission from the original authors.
+
+## 3. Notices
+
+You must keep copyright, copyleft, license, and asset credit notices intact when sharing Aspyria or modified versions.
+
+You must not claim that your fork, modified build, service, video, post, or other work is official unless the original authors have clearly said so in writing.
+
+## 4. Ownership
+
+Explicit rights for the Aspyria code belong to the original authors.
+
+Your own original changes belong to you, but your permission to use, copy, modify, and share Aspyria remains limited by this license.
+
+This license does not grant trademark rights or ownership of the Aspyria name, logo, setting, or identity.
+
+## 5. Third-Party Assets
+
+Third-party assets keep their own licenses. See asset notes in the repository for specific credits and terms.
+
+## 6. No Warranty
+
+Aspyria is provided as-is, without warranty of any kind. The authors are not liable for damages or problems caused by using, modifying, sharing, or hosting the game.
