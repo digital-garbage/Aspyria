@@ -1,6 +1,6 @@
 # Aspyria
 
-A small desktop RPG inspired by old browser-game progression: fight cursed necromancers, get items, build weird stat stacks, complete gear sets, die badly, spend permanent gold, and come back stronger.
+A small PyQt-based RPG, inspired by old browser-game progression: fight cursed necromancers, get items, build weird stat stacks, complete gear sets, die badly, spend permanent gold, and come back stronger.
 
 ## Run
 
@@ -17,45 +17,165 @@ Console version:
 python -B main.py --console
 ```
 
-## Content and mods
+## How to Play
 
-Base game content lives in `content/en/core.json`. Mods go into `mods/<mod_id>/` with a `mod.json` manifest and one or more JSON content files. English text is the default; optional translations can live in `translations/` or `mods/<mod_id>/translations/`.
+# Core Loop
 
-JSON content can define stats, item name pools, sets, enemies, bosses, locations, and encounters. Encounter effects currently support messages, coins, gold, item rewards, stat buffs/debuffs, choice lists, shop/scout/crafting hooks, and combat hooks.
+You explore a chain of increasingly dangerous locations:
+Highcrown Fields → Chapel of Broken Bells → Old Court Road → Ashen Foundries → Veyr’s Black Citadel
 
-See `MODDING.md` for examples.
+After the Citadel, the loop restarts at a harder version of Highcrown Fields.
 
-## License and credits
+Each location has:
 
-Aspyria is source-available under the custom terms in `LICENSE.md`. The short human-readable version is in `COMMERCIAL_USE.md`.
+- Random fights against normal enemies
 
-Splash art: Grok Imagine.
+- Occasional post-fight encounters (events, shops, crafting, wishing wells, story moments)
 
-Music: Suno AI.
+- A boss after a set number of fights
 
-Sound effects: Kenney Interface Sounds by Kenney, CC0 1.0 Universal. Details are in `ASSETS.md`.
+You level up by gaining XP from fights. At each level-up you choose a permanent stat boost. Bosses and milestones grant powerful perks and relics.
 
-Fonts: Tiny5 by Stefan Schmidt and Pixelify Sans by Stefie Justprince. Details are in `ASSETS.md`.
+# Combat
 
-## What is in v1
+Simple Attack or Flee choices.
 
-- Endless location loop: Highcrown Fields -> Chapel of Broken Bells -> Old Court Road -> Ashen Foundries -> Veyr's Black Citadel -> harder Highcrown Fields.
-- Gear-defined builds instead of classes.
-- Attack/flee combat flow with automated turn logs.
-- Level-up stat choices and milestone/boss perks.
-- Location iLvl ranges with gear advantage bonuses.
-- Named relic effects for level rewards, fleeing, boss perks, and necromancer loot.
-- Full item sets with weak partial bonuses and huge complete-set bonuses.
-- Permanent menu upgrades with half-cost refunds.
-- Limited inventory slots, also bought and refunded from the menu.
-- Coins for shops during a run, gold for permanent power after a run.
-- Post-fight enhancement choices after lesser mobs and story dialogue for enemies and bosses.
-- Wishing well events with strong buffs and ugly tradeoffs.
-- Crafting table for improving quality or fusing three lesser items into one better random item.
-- Four-step defeat curse: lose best gear, lose coins, get stat scars, then die and cash out.
+Combat is fully automated with a turn-by-turn log so you can watch your build in action.
 
-## Tests
+Enemies have HP, attack power, and special abilities (e.g., “rage”).
 
-```bash
-python -m unittest
-```
+You can flee most fights (with consequences based on your relics).
+
+Gear advantage (higher total iLvl than the enemy) gives you big bonuses.
+
+# Gear & Builds
+
+Everything is gear-driven — there are no character classes.
+
+Items have stats (ATK, CR% (crit rate), CD% (crit damage), Luck%, etc.) and belong to item sets.
+
+Partial set bonuses are small; completing a full set gives massive power spikes.
+
+Items have an item level (iLvl) that scales with the location. Higher-iLvl gear is stronger.
+
+Inventory has limited slots (you can buy more permanently from the meta menu).
+
+# Crafting & Economy
+
+Two currencies:
+
+Coins – used during a run (shops, upgrades, inventory expansion).
+
+Gold – permanent currency earned on death; spent in the meta menu for lasting power.
+
+Crafting table lets you:
+
+Improve the quality of an item (higher stats).
+
+Fuse three lesser items into one better random item of the same slot.
+
+Shops and scouting events appear via encounters.
+
+# Wishing Wells & Events
+
+Random powerful events (especially wishing wells) give huge buffs… with ugly trade-offs. Post-fight story moments with enemies and bosses often offer permanent enhancement choices.
+
+# Death & The Curse
+
+When you die you don’t lose everything immediately. A four-step curse triggers:
+
+Lose your best piece of gear.
+
+Lose all coins.
+
+Receive stat scars (negative permanent modifiers).
+
+Die and cash out your gold.
+
+You then spend the gold in the permanent upgrade menu (with half-cost refunds available) and start a new run stronger than before.
+
+# Permanent Menu (Meta Progression):
+
+Accessed between runs. Here you can:Spend gold on permanent upgrades.
+
+Refund upgrades at half cost.
+
+Expand inventory slots.
+
+View your relic collection and current build power.
+
+# Game Features (v1):
+
+- Endless location loop with scaling difficulty
+- 
+- Gear-defined builds instead of classes
+- 
+- Automated combat with attack/flee and detailed logs
+- 
+- Level-up stat choices + milestone/boss perks
+- 
+- Location-based iLvl ranges + gear advantage bonuses
+- 
+- Named relic effects (level rewards, fleeing, boss perks, necromancer loot)
+- 
+- Full item sets with weak partial bonuses and huge complete-set bonuses
+- 
+- Permanent menu upgrades with half-cost refunds
+- 
+- Limited (and expandable) inventory slots
+- 
+- Coins (run-only) vs Gold (permanent)
+- 
+- Post-fight enhancement choices and story dialogue
+- 
+- Wishing well events with strong buffs and painful trade-offs
+- 
+- Crafting table (quality improvement + 3-to-1 fusion)
+- 
+- Four-step defeat curse progression
+
+# Modding
+
+Aspyria is fully data-driven and extremely mod-friendly.Base content: content/en/core.json
+
+Mods go in mods/<mod_id>/ with a mod.json manifest + content JSON files.
+
+You can add/replace: stats, item name pools, sets, enemies, bosses, locations, encounters, level rewards, perks, relics, etc.
+
+Encounters support messages, coin/gold rewards, items, stat buffs/debuffs, choice lists, shops, crafting, combat hooks, and more.
+
+See MODDING.md for full examples and JSON format.
+
+Translations are supported via translations/ folders (English is always the fallback).
+
+# Assets & Credits
+
+Ideas, coding, testing: DigitalGarbage
+
+Coding assistance: ChatGPT Codex
+
+Splash art: Generated by Grok Imagine
+
+Music: Generated by Suno AI
+
+Sound effects: Kenney Interface Sounds – CC0 1.0 Universal
+
+Fonts: Tiny5 by Stefan Schmidt & Pixelify Sans by Stefie Justprince
+
+Full asset details and licenses are in ASSETS.md.
+
+# License
+
+Aspyria is source-available under a custom Aspyria Source-Available Noncommercial License. The main difference from GPL, MIT, BSD and similar licences: if shortly, you are fine doing whatever you want with the game and the code unless you are trying to sell the original code or your modifications of this code, or using original code as a base for commercial product.
+
+Full legal text: LICENSE.md 
+
+Human-readable commercial-use summary: COMMERCIAL_USE.md
+
+# Contributing
+
+Pull requests, bug reports, balance suggestions, and new mod ideas are welcome!
+
+Just open an issue or PR on GitHub.
+
+Enjoy the climb, adventurer. May your stat stacks be weird and your set bonuses legendary.
