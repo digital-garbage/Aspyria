@@ -16,6 +16,8 @@ You may feature Aspyria, its gameplay, and its code in social media, videos, liv
 
 You may sell access to services that let users play or modify Aspyria, as long as you are not selling Aspyria itself, a copy of Aspyria, modified Aspyria builds, or derivative software based on Aspyria code.
 
+Any publicly available derivative work, modified version, fork, or build based on Aspyria (or any portion of its code, assets, or content released under this license) must be released under the exact same terms of this license, including the non-commercial restrictions. Mods, plugins, additional content, or data files created using Aspyria’s official modding system (e.g. files placed in the `mods/` directory or using the provided modding API) do **not** fall under the terms of this license. The author of such modifications may license and distribute them under any terms they choose, including commercial or permissive licenses.
+
 ## 2. Commercial Use That Is Not Allowed
 
 You may not sell the original Aspyria code or game copy.
