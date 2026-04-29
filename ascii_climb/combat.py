@@ -152,13 +152,18 @@ def enemy_scale(meta: MetaState, run: RunState, enemy: EnemyTemplate) -> tuple[i
     return max(1, hp), max(1, atk), max(1, xp), max(1, coins)
 
 
+def percent_triggers(rng: random.Random, chance: float, max_triggers: int | None = None) -> int:
+    chance = max(0.0, chance)
+    guaranteed = int(chance // 100)
+    if rng.random() * 100 < chance % 100:
+        guaranteed += 1
+    if max_triggers is not None:
+        return min(max_triggers, guaranteed)
+    return guaranteed
+
+
 def attack_count(rng: random.Random, chance: float) -> int:
-    attacks = 1
-    if rng.random() * 100 < chance:
-        attacks += 1
-    if rng.random() * 100 < max(0.0, chance - 35.0):
-        attacks += 1
-    return min(3, attacks)
+    return 1 + percent_triggers(rng, chance, max_triggers=2)
 
 
 def player_hit(rng: random.Random, stats: dict, stance: str) -> tuple[int, List[str]]:
@@ -166,18 +171,20 @@ def player_hit(rng: random.Random, stats: dict, stance: str) -> tuple[int, List[
     stance_atk = {"steady": 1.0, "guarded": 0.82, "reckless": 1.22}.get(stance, 1.0)
     crit_shift = 8 if stance == "reckless" else -8 if stance == "guarded" else 0
     damage = stats["ATK"] * stance_atk * rng.uniform(0.86, 1.14)
-    if rng.random() * 100 < max(0.0, stats.get("CR%", 0.0) + crit_shift):
-        damage *= 1 + stats.get("CD%", 0.0) / 100
-        logs.append("critical")
-        if rng.random() * 100 < stats.get("Megacrit Chance%", 0.0):
-            damage *= 1 + stats.get("Megacrit Damage%", 0.0) / 100
-            logs.append("MEGACRIT")
+    crits = percent_triggers(rng, stats.get("CR%", 0.0) + crit_shift)
+    if crits:
+        damage += damage * stats.get("CD%", 0.0) / 100 * crits
+        logs.append("critical" if crits == 1 else f"critical x{crits}")
+        megacrits = percent_triggers(rng, stats.get("Megacrit Chance%", 0.0))
+        if megacrits:
+            damage += damage * stats.get("Megacrit Damage%", 0.0) / 100 * megacrits
+            logs.append("MEGACRIT" if megacrits == 1 else f"MEGACRIT x{megacrits}")
     return max(1, int(damage)), logs
 
 
 def enemy_hit(rng: random.Random, enemy: EnemyTemplate, enemy_atk: int, stats: dict, stance: str) -> tuple[int, str]:
     evade_bonus = 8 if stance == "guarded" else -8 if stance == "reckless" else 0
-    if rng.random() * 100 < stats.get("Evasion%", 0.0) + evade_bonus:
+    if percent_triggers(rng, stats.get("Evasion%", 0.0) + evade_bonus):
         return 0, "You evade the hit."
     damage = enemy_atk * rng.uniform(0.88, 1.12)
     if "rage" in enemy.abilities and rng.random() < 0.18:

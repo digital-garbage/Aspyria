@@ -123,10 +123,6 @@ def minimum_stat_value(stat: str) -> float:
 def clamp_effective_stats(stats: dict[str, float]) -> dict[str, float]:
     for stat in list(stats):
         stats[stat] = max(minimum_stat_value(stat), float(stats.get(stat, 0.0)))
-    stats["CR%"] = min(stats.get("CR%", 0.0), 95.0)
-    stats["Evasion%"] = min(stats.get("Evasion%", 0.0), 80.0)
-    stats["Multi-Attack Chance%"] = min(stats.get("Multi-Attack Chance%", 0.0), 85.0)
-    stats["Megacrit Chance%"] = min(stats.get("Megacrit Chance%", 0.0), 50.0)
     return stats
 
 

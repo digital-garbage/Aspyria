@@ -11,6 +11,8 @@ from ascii_climb.combat import (
     flee_from_combat,
     get_or_create_active_fight,
     maybe_break_reckless_item,
+    percent_triggers,
+    player_hit,
     run_combat,
     run_combat_turn,
     scout_preview,
@@ -97,9 +99,19 @@ class ILevelTests(unittest.TestCase):
 
 
 class CombatFlowTests(unittest.TestCase):
-    def test_attack_count_can_reach_three(self):
+    def test_sub_100_multi_attack_can_reach_two(self):
         counts = {attack_count(random.Random(seed), 95) for seed in range(40)}
-        self.assertIn(3, counts)
+        self.assertIn(2, counts)
+
+    def test_over_100_multi_attack_grants_guaranteed_extra_attacks(self):
+        self.assertEqual(attack_count(random.Random(1), 100), 2)
+        self.assertEqual(attack_count(random.Random(1), 200), 3)
+        counts = {attack_count(random.Random(seed), 150) for seed in range(30)}
+        self.assertEqual(counts, {2, 3})
+
+    def test_percent_triggers_supports_over_100_rolls(self):
+        self.assertEqual(percent_triggers(random.Random(1), 220), 3)
+        self.assertEqual(percent_triggers(random.Random(2), 220), 2)
 
     def test_run_combat_queues_level_reward(self):
         run = RunState(seed=1, xp=95)
@@ -140,6 +152,28 @@ class CombatFlowTests(unittest.TestCase):
         full_line = f"{line} Damage: {damage}. HP: {run.current_hp}/50."
         self.assertIn("Damage:", full_line)
         self.assertIn("HP:", full_line)
+
+    def test_over_100_evasion_guarantees_evade(self):
+        enemy = ENEMIES[LOCATIONS[0].enemy_names[0]]
+        damage, line = enemy_hit(random.Random(2), enemy, 999, {"Evasion%": 100.0}, "steady")
+        self.assertEqual(damage, 0)
+        self.assertIn("evade", line.lower())
+
+    def test_overcrit_adds_repeated_crit_damage_chunks(self):
+        class FlatRandom(random.Random):
+            def uniform(self, a, b):
+                return 1.0
+
+            def random(self):
+                return 0.99
+
+        damage, tags = player_hit(
+            FlatRandom(1),
+            {"ATK": 100.0, "CR%": 220.0, "CD%": 50.0, "Megacrit Chance%": 0.0},
+            "steady",
+        )
+        self.assertEqual(damage, 200)
+        self.assertIn("critical x2", tags)
 
     def test_reckless_can_break_equipped_item(self):
         run = RunState()
