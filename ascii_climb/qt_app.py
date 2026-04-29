@@ -99,7 +99,7 @@ from ascii_climb.meta import (
     refund_upgrade,
     upgrade_cost,
 )
-from ascii_climb.models import EQUIPMENT_SLOTS, GameSettings, Item, RunState, STAT_DESCRIPTIONS, STAT_KEYS, SaveData
+from ascii_climb.models import EQUIPMENT_SLOTS, GameSettings, Item, RARITIES, RunState, STAT_DESCRIPTIONS, STAT_KEYS, SaveData
 from ascii_climb.progression import (
     apply_enhancement,
     describe_enhancement,
@@ -151,6 +151,15 @@ PIXEL_BODY_FONT = "Tiny5"
 PIXEL_DISPLAY_FONT = "Pixelify Sans"
 INVENTORY_ICON_SHEET = ICON_ROOT / "vendor" / "opengameart-rpg-inventory-icons.png"
 KENNEY_ICON_ROOT = ICON_ROOT / "vendor" / "kenney-game-icons" / "PNG" / "White" / "2x"
+ITEM_ICON_ROOT = ICON_ROOT / "items"
+ITEM_ICON_PATHS = {
+    slot: {rarity: ITEM_ICON_ROOT / slot / f"{rarity}.png" for rarity in RARITIES}
+    for slot in EQUIPMENT_SLOTS
+}
+ITEM_ICON_FALLBACKS = {
+    slot: ITEM_ICON_ROOT / f"{slot}.png"
+    for slot in EQUIPMENT_SLOTS
+}
 ITEM_ICON_RECTS = {
     "weapon": (0, 0, 32, 32),
     "armor": (96, 0, 32, 32),
@@ -484,7 +493,17 @@ def item_tooltip(item: Item) -> str:
 def item_icon_pixmap(item: Item | None, size: int = 36) -> QPixmap:
     pixmap = QPixmap(size, size)
     pixmap.fill(QColor("#201b16"))
-    if item is None or not INVENTORY_ICON_SHEET.exists():
+    if item is None:
+        return pixmap
+    slot_icons = ITEM_ICON_PATHS.get(item.slot, {})
+    icon_path = slot_icons.get(item.rarity) or slot_icons.get("common") or ITEM_ICON_FALLBACKS.get(item.slot)
+    if icon_path and icon_path.exists():
+        icon = QPixmap(str(icon_path))
+        if not icon.isNull():
+            aspect_ratio = Qt.AspectRatioMode.KeepAspectRatio if QT_MAJOR == 6 else Qt.KeepAspectRatio
+            transform = Qt.TransformationMode.FastTransformation if QT_MAJOR == 6 else Qt.FastTransformation
+            return icon.scaled(size, size, aspect_ratio, transform)
+    if not INVENTORY_ICON_SHEET.exists():
         return pixmap
     sheet = QPixmap(str(INVENTORY_ICON_SHEET))
     rect = ITEM_ICON_RECTS.get(item.slot, ITEM_ICON_RECTS["fallback"])
