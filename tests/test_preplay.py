@@ -59,6 +59,12 @@ class LevelRewardTests(unittest.TestCase):
         options = generate_level_reward_options(random.Random(1), run, {"type": "stat"})
         self.assertTrue(options)
 
+    def test_vampirism_is_not_a_level_reward_option(self):
+        run = RunState(favored_stat="Vampirism%")
+        options = generate_level_reward_options(random.Random(1), run, {"type": "stat"})
+        self.assertTrue(options)
+        self.assertNotIn("Vampirism%", {option.get("stat") for option in options})
+
     def test_perk_reward_descriptions_show_real_effects(self):
         reward = {"title": "Royal Purse", "effect": "bonus_coins", "params": {"coins": 60}}
         self.assertEqual(describe_level_reward(reward), "Royal Purse: gain 60 coins immediately")

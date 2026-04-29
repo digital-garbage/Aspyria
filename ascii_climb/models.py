@@ -17,7 +17,10 @@ STAT_KEYS = [
     "XP Boost%",
     "Enemy Scaling%",
     "Coin Acquisition Boost%",
+    "Vampirism%",
 ]
+
+RANDOM_RUN_STAT_KEYS = [stat for stat in STAT_KEYS if stat not in {"Enemy Scaling%", "Vampirism%"}]
 
 STAT_DESCRIPTIONS = {
     "ATK": "Increases the damage you deal with each attack.",
@@ -32,6 +35,7 @@ STAT_DESCRIPTIONS = {
     "XP Boost%": "Increases XP gained from defeated enemies.",
     "Enemy Scaling%": "Raises enemy pressure, rewards, and possible item levels.",
     "Coin Acquisition Boost%": "Increases coins gained during a run.",
+    "Vampirism%": "Restores a percentage of attack damage as HP after each hit.",
     "Damage Reduction%": "Reduces incoming damage before other penalties.",
     "Damage Taken%": "Increases incoming damage from curses and risky effects.",
     "Gold Payout%": "Increases gold paid out when a run ends.",
@@ -50,6 +54,7 @@ STAT_LABELS = {
     "XP Boost%": "XP Boost",
     "Enemy Scaling%": "Enemy Scaling",
     "Coin Acquisition Boost%": "Coin Acquisition",
+    "Vampirism%": "Vampirism",
     "Damage Reduction%": "Damage Reduction",
     "Damage Taken%": "Damage Taken",
     "Gold Payout%": "Gold Payout",

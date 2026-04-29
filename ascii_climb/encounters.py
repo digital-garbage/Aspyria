@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from ascii_climb.content import ENCOUNTERS
 from ascii_climb.loot import roll_item, roll_rarity
 from ascii_climb.meta import effective_stats
-from ascii_climb.models import Item, MetaState, QUALITIES, RunState, STAT_KEYS
+from ascii_climb.models import Item, MetaState, QUALITIES, RANDOM_RUN_STAT_KEYS, RunState, STAT_KEYS
 from ascii_climb.progression import apply_enhancement, describe_enhancement, generate_wishing_well_options
 from ascii_climb.state import blocked_positive_amount, safe_apply_buff, safe_apply_debuff
 
@@ -201,7 +201,7 @@ def _apply_handler(
                 run.current_hp = max(1, run.current_hp - hp_loss)
                 result.logs.append(f"The bandit wounds you for {hp_loss} HP and steals {loss} coins.")
     elif handler == "pitfall":
-        stat = rng.choice([stat for stat in STAT_KEYS if stat != "Enemy Scaling%"])
+        stat = rng.choice(RANDOM_RUN_STAT_KEYS)
         run.timed_stat_modifiers.append(
             {
                 "stat": stat,
@@ -212,7 +212,7 @@ def _apply_handler(
         )
         result.logs.append(f"{stat} is halved for the next 3 fights.")
     elif handler == "old_monk":
-        stat = rng.choice([stat for stat in STAT_KEYS if stat != "Enemy Scaling%"])
+        stat = rng.choice(RANDOM_RUN_STAT_KEYS)
         amount = blocked_positive_amount(
             run,
             stat,

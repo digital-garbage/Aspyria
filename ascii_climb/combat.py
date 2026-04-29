@@ -8,7 +8,7 @@ from ascii_climb.content import ENEMIES, LOCATIONS
 from ascii_climb.leveling import queue_level_rewards
 from ascii_climb.loot import roll_item
 from ascii_climb.meta import effective_stats, final_gold_payout
-from ascii_climb.models import EnemyTemplate, Item, MetaState, RunState, STAT_KEYS
+from ascii_climb.models import EnemyTemplate, Item, MetaState, RANDOM_RUN_STAT_KEYS, RunState, STAT_KEYS
 from ascii_climb.relics import consume_relic_charge
 from ascii_climb.state import decay_timed_modifiers, lock_stat, safe_apply_buff, sanitize_active_fight
 
@@ -193,6 +193,18 @@ def enemy_hit(rng: random.Random, enemy: EnemyTemplate, enemy_atk: int, stats: d
     return damage_done, f"{enemy.name} hits you for {damage_done}."
 
 
+def apply_vampirism(run: RunState, damage: int, stats: dict, max_hp: int) -> int:
+    vampirism = max(0.0, stats.get("Vampirism%", 0.0))
+    if damage <= 0 or vampirism <= 0 or run.current_hp >= max_hp:
+        return 0
+    heal = int(damage * vampirism / 100)
+    if heal <= 0:
+        return 0
+    old_hp = run.current_hp
+    run.current_hp = min(max_hp, run.current_hp + heal)
+    return run.current_hp - old_hp
+
+
 def enemy_dialogue(enemy: EnemyTemplate, key: str, fallback: str) -> str:
     return enemy.dialogue.get(key, fallback)
 
@@ -301,6 +313,21 @@ def run_combat(
                     "enemy_max_hp": enemy_hp,
                 }
             )
+            vamp_heal = apply_vampirism(run, damage, stats, max_hp)
+            if vamp_heal:
+                heal_message = f"Vampirism restores {vamp_heal} HP. HP: {run.current_hp}/{max_hp}."
+                logs.append(heal_message)
+                events.append(
+                    {
+                        "actor": "system",
+                        "message": heal_message,
+                        "vampirism_heal": vamp_heal,
+                        "player_hp": run.current_hp,
+                        "player_max_hp": max_hp,
+                        "enemy_hp": hp_left,
+                        "enemy_max_hp": enemy_hp,
+                    }
+                )
             if stance == "reckless":
                 broken_event = maybe_break_reckless_item(rng, run, logs)
                 if broken_event:
@@ -427,6 +454,11 @@ def run_combat_turn(
         message = f"Round {round_no} [{stance}]: You deal {damage}{tag_text}. Enemy HP: {hp_left}/{enemy_hp}."
         logs.append(message)
         events.append(_combat_event("player", message, run.current_hp, max_hp, hp_left, enemy_hp, damage=damage, tags=tags))
+        vamp_heal = apply_vampirism(run, damage, stats, max_hp)
+        if vamp_heal:
+            heal_message = f"Vampirism restores {vamp_heal} HP. HP: {run.current_hp}/{max_hp}."
+            logs.append(heal_message)
+            events.append(_combat_event("system", heal_message, run.current_hp, max_hp, hp_left, enemy_hp))
         if stance == "reckless":
             broken_event = maybe_break_reckless_item(rng, run, logs)
             if broken_event:
@@ -638,7 +670,7 @@ def flee_from_combat(rng: random.Random, meta: MetaState, run: RunState) -> Comb
     logs = [f"You flee from {enemy.name}. It keeps {enemy_hp_left}/{enemy_hp} HP."]
     if rng.random() < 0.06:
         logs = ["You have managed to walk past the enemy undetected. This will not end well in the future."]
-        stat = rng.choice(STAT_KEYS)
+        stat = rng.choice(RANDOM_RUN_STAT_KEYS)
         lock_stat(run, stat)
         logs.append(f"{stat} is now locked for the rest of this run.")
         result = handle_victory(
@@ -691,7 +723,7 @@ def flee_from_combat(rng: random.Random, meta: MetaState, run: RunState) -> Comb
             logs.append("You have no item to lose; the curse takes coins instead.")
             run.coins = max(0, run.coins - min(run.coins, 10))
     else:
-        stat = rng.choice(STAT_KEYS)
+        stat = rng.choice(RANDOM_RUN_STAT_KEYS)
         run.run_debuffs.setdefault(stat, 0.0)
         logs.append(f"{stat} will not accept further boosts this run.")
     consolation_item, consolation_buff = grant_consolation_reward(rng, meta, run, logs)
@@ -722,7 +754,7 @@ def grant_consolation_reward(
         item = roll_item(rng, run, stats.get("Luck%", 0.0), stats.get("Enemy Scaling%", 0.0))
         logs.append(f"In the chaos, you recover {item.label()}.")
         return item, None
-    stat = rng.choice([key for key in STAT_KEYS if key != "Enemy Scaling%"])
+    stat = rng.choice(RANDOM_RUN_STAT_KEYS)
     amount = 4.0 if stat in {"ATK", "HP"} else 2.0
     if stat in {"CD%", "Megacrit Damage%"}:
         amount = 6.0

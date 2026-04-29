@@ -14,7 +14,8 @@
     "Megacrit Damage%": 150.0,
     "XP Boost%": 0.0,
     "Enemy Scaling%": 0.0,
-    "Coin Acquisition Boost%": 0.0
+    "Coin Acquisition Boost%": 0.0,
+    "Vampirism%": 0.0
   },
   "upgrade_base_costs": {
     "ATK": 4,
@@ -28,7 +29,8 @@
     "Megacrit Damage%": 10,
     "XP Boost%": 6,
     "Enemy Scaling%": 4,
-    "Coin Acquisition Boost%": 6
+    "Coin Acquisition Boost%": 6,
+    "Vampirism%": 9
   },
   "rarity_multipliers": {
     "common": 1.0,
@@ -47,12 +49,12 @@
     "special craft": 1.75
   },
   "slot_stat_pools": {
-    "weapon": ["ATK", "CR%", "CD%", "Megacrit Chance%", "Megacrit Damage%"],
-    "armor": ["HP", "Evasion%", "Enemy Scaling%"],
+    "weapon": ["ATK", "CR%", "CD%", "Megacrit Chance%", "Megacrit Damage%", "Vampirism%"],
+    "armor": ["HP", "Evasion%", "Enemy Scaling%", "Vampirism%"],
     "charm": ["Luck%", "XP Boost%", "Coin Acquisition Boost%", "Megacrit Chance%"],
     "boots": ["Evasion%", "Multi-Attack Chance%", "Luck%"],
-    "ring": ["CR%", "CD%", "Coin Acquisition Boost%", "Multi-Attack Chance%"],
-    "relic": ["Megacrit Damage%", "Enemy Scaling%", "XP Boost%", "HP"]
+    "ring": ["CR%", "CD%", "Coin Acquisition Boost%", "Multi-Attack Chance%", "Vampirism%"],
+    "relic": ["Megacrit Damage%", "Enemy Scaling%", "XP Boost%", "HP", "Vampirism%"]
   },
   "rarity_names": {
     "common": ["Dented", "Militia", "Weathered", "Plain"],

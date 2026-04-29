@@ -1,9 +1,10 @@
 import random
 import unittest
 
-from ascii_climb.combat import apply_defeat_penalty, enemy_scale, run_combat
+from ascii_climb.combat import apply_defeat_penalty, apply_vampirism, enemy_scale, run_combat
 from ascii_climb.content import ENEMIES, LOCATIONS
 from ascii_climb.loot import roll_item
+from ascii_climb.loot import improve_quality
 from ascii_climb.meta import (
     buy_inventory_slot,
     buy_upgrade,
@@ -69,6 +70,22 @@ class GearSetTests(unittest.TestCase):
         run.run_debuffs["CR%"] = 18
         apply_enhancement(run, EnhancementOption("Blocked CR", {"CR%": 5}, {}))
         self.assertNotIn("CR%", run.run_buffs)
+
+    def test_vampirism_comes_from_meta_and_items_and_hones(self):
+        meta = MetaState()
+        meta.upgrades["Vampirism%"] = 2
+        run = RunState(seed=1)
+        item = Item("v", "Blood Signet", "ring", "rare", "trash", 1, {"Vampirism%": 4}, value=100)
+        run.equipment["ring"] = item
+        self.assertEqual(effective_stats(meta, run)["Vampirism%"], 7)
+        improve_quality(item)
+        self.assertGreater(effective_stats(meta, run)["Vampirism%"], 7)
+
+    def test_vampirism_heals_after_attack_damage(self):
+        run = RunState(current_hp=40)
+        healed = apply_vampirism(run, 30, {"Vampirism%": 50}, 100)
+        self.assertEqual(healed, 15)
+        self.assertEqual(run.current_hp, 55)
 
 
 class RunSystemTests(unittest.TestCase):

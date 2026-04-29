@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Iterable
 
 try:
-    from PyQt6.QtCore import QMimeData, Qt, QTimer
+    from PyQt6.QtCore import QMimeData, QSize, Qt, QTimer
     from PyQt6.QtGui import QBrush, QColor, QDrag, QFont, QFontDatabase, QIcon, QPainter, QPixmap
     from PyQt6.QtWidgets import (
         QAbstractItemView,
@@ -42,7 +42,7 @@ try:
 
     QT_MAJOR = 6
 except ModuleNotFoundError:
-    from PyQt5.QtCore import QMimeData, Qt, QTimer
+    from PyQt5.QtCore import QMimeData, QSize, Qt, QTimer
     from PyQt5.QtGui import QBrush, QColor, QDrag, QFont, QFontDatabase, QIcon, QPainter, QPixmap
     from PyQt5.QtWidgets import (
         QAbstractItemView,
@@ -492,6 +492,43 @@ def item_icon_pixmap(item: Item | None, size: int = 36) -> QPixmap:
     return icon.scaled(size, size)
 
 
+def slot_placeholder_pixmap(slot: str = "", size: int = 36) -> QPixmap:
+    pixmap = QPixmap(size, size)
+    pixmap.fill(QColor("#201b16"))
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing if QT_MAJOR == 6 else QPainter.Antialiasing, False)
+    painter.setPen(QColor("#050505"))
+    painter.setBrush(QColor("#050505"))
+    inset = max(4, size // 8)
+    if slot == "weapon":
+        painter.drawRect(size // 2 - 2, inset, 4, size - inset * 2)
+        painter.drawRect(size // 3, size - inset * 2, size // 3, 4)
+    elif slot == "armor":
+        painter.drawRect(size // 4, inset, size // 2, size - inset * 2)
+        painter.drawRect(size // 5, inset + 4, size // 5, size // 4)
+        painter.drawRect(size * 3 // 5, inset + 4, size // 5, size // 4)
+    elif slot == "boots":
+        painter.drawRect(inset, size // 2, size // 3, size // 3)
+        painter.drawRect(size // 2, size // 2, size // 3, size // 3)
+    elif slot == "ring":
+        painter.drawEllipse(inset, inset, size - inset * 2, size - inset * 2)
+        painter.setBrush(QColor("#201b16"))
+        painter.drawEllipse(inset * 2, inset * 2, size - inset * 4, size - inset * 4)
+    elif slot == "charm":
+        painter.drawLine(size // 2, inset, size - inset, size // 2)
+        painter.drawLine(size - inset, size // 2, size // 2, size - inset)
+        painter.drawLine(size // 2, size - inset, inset, size // 2)
+        painter.drawLine(inset, size // 2, size // 2, inset)
+        painter.drawRect(size // 2 - 2, size // 2 - 2, 4, 4)
+    elif slot == "relic":
+        painter.drawEllipse(inset, inset, size - inset * 2, size - inset * 2)
+        painter.drawRect(size // 2 - 2, inset * 2, 4, size - inset * 4)
+    else:
+        painter.drawRect(inset, inset, size - inset * 2, size - inset * 2)
+    painter.end()
+    return pixmap
+
+
 class ItemSlotWidget(QFrame):
     def __init__(self, owner, area: str, index: int = -1, equipment_slot: str = ""):
         super().__init__(owner)
@@ -521,8 +558,8 @@ class ItemSlotWidget(QFrame):
 
     def refresh(self, item: Item | None, selected: bool = False) -> None:
         self.item_id = item.id if item else ""
-        self.icon.setPixmap(item_icon_pixmap(item))
         if item:
+            self.icon.setPixmap(item_icon_pixmap(item))
             self.label.setText(item.name)
             self.setToolTip(item_tooltip(item))
             top, bottom = item_colors(item)
@@ -537,6 +574,7 @@ class ItemSlotWidget(QFrame):
             )
         else:
             label = self.equipment_slot if self.equipment_slot else f"Slot {self.index + 1}"
+            self.icon.setPixmap(slot_placeholder_pixmap(self.equipment_slot))
             self.label.setText(label)
             self.setToolTip("Empty slot")
             border = "#ffd166" if selected else "#3b3127"
@@ -885,17 +923,23 @@ class AspyriaWindow(QMainWindow):
         inventory_box, self.inventory_slot_grid = self._make_inventory_slot_grid()
         layout.addWidget(inventory_box, 1, 0, 1, 4)
         self.equip_button = QPushButton(self.t("game.equip"))
-        self.unequip_button = QPushButton("Take Off")
         self.sell_button = QPushButton(self.t("game.sell"))
-        self.drop_button = QPushButton(self.t("game.drop"))
+        self.drop_button = QPushButton()
+        self.drop_button.setToolTip(self.t("game.drop"))
+        trash_icon = KENNEY_ICON_ROOT / "trashcan.png"
+        if trash_icon.exists():
+            self.drop_button.setIcon(QIcon(str(trash_icon)))
+            self.drop_button.setIconSize(QSize(34, 34))
+        else:
+            self.drop_button.setText("X")
+        self.drop_button.setMinimumHeight(46)
+        self.drop_button.setStyleSheet("QPushButton { color: #ff4d4d; font-size: 26px; text-align: center; }")
         self.equip_button.clicked.connect(self._button_action(self.equip_selected))
-        self.unequip_button.clicked.connect(self._button_action(self.unequip_selected))
         self.sell_button.clicked.connect(self._button_action(self.sell_selected))
         self.drop_button.clicked.connect(self._button_action(self.drop_selected))
         layout.addWidget(self.equip_button, 2, 0)
-        layout.addWidget(self.unequip_button, 2, 1)
-        layout.addWidget(self.sell_button, 2, 2)
-        layout.addWidget(self.drop_button, 2, 3)
+        layout.addWidget(self.sell_button, 2, 1)
+        layout.addWidget(self.drop_button, 2, 2)
         self.tabs.addTab(tab, self.t("game.inventory"))
 
     def _build_shop_tab(self) -> None:
@@ -1659,26 +1703,6 @@ class AspyriaWindow(QMainWindow):
         self.save_current_slot()
         self.refresh_all()
 
-    def unequip_selected(self) -> None:
-        run = self.data.run if self.data else None
-        if run is None:
-            self.warn(self.t("game.no_active_run"))
-            return
-        slot = self.selected_equipment_slot
-        if not slot:
-            self.warn("Select an equipped item first.")
-            return
-        ok, message = unequip_item(self.data.meta, run, slot)
-        self.log(message)
-        self.sound.play("loot" if ok else "error")
-        if not ok:
-            self.warn(message)
-            return
-        self.selected_equipment_slot = ""
-        self.normalize_current_hp()
-        self.save_current_slot()
-        self.refresh_all()
-
     def sell_selected(self) -> None:
         items = self.selected_inventory_items()
         run = self.data.run if self.data else None
@@ -1982,7 +2006,6 @@ class AspyriaWindow(QMainWindow):
             self.fight_button,
             self.scout_button,
             self.equip_button,
-            self.unequip_button,
             self.sell_button,
             self.drop_button,
         ):
