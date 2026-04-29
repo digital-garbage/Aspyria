@@ -554,6 +554,8 @@ class ItemSlotWidget(QFrame):
         self.label.setFont(_pixel_font(9, family=PIXEL_BODY_FONT))
         layout.addWidget(self.icon, alignment=_align_center())
         layout.addWidget(self.label)
+        self.icon.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents if QT_MAJOR == 6 else Qt.WA_TransparentForMouseEvents)
+        self.label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents if QT_MAJOR == 6 else Qt.WA_TransparentForMouseEvents)
         self.refresh(None, False)
 
     def refresh(self, item: Item | None, selected: bool = False) -> None:
@@ -593,7 +595,7 @@ class ItemSlotWidget(QFrame):
     def mouseMoveEvent(self, event) -> None:
         if not (event.buttons() & _left_button()):
             return
-        if not self.item_id and self.area != "equipment":
+        if not self.item_id:
             return
         mime = QMimeData()
         payload = f"{self.area}|{self.index}|{self.item_id}|{self.equipment_slot}"
@@ -604,6 +606,10 @@ class ItemSlotWidget(QFrame):
         drag.exec(_move_action())
 
     def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasText():
+            event.acceptProposedAction()
+
+    def dragMoveEvent(self, event) -> None:
         if event.mimeData().hasText():
             event.acceptProposedAction()
 

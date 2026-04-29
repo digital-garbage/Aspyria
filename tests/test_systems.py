@@ -273,6 +273,12 @@ class QtSmokeTests(unittest.TestCase):
         live_dialog.stance_combo.setCurrentText("reckless")
         self.assertIn("Reckless", live_dialog.action.text())
         live_dialog.close()
+        gear = Item("drag-weapon", "Drag Blade", "weapon", "common", "used", 1, {"ATK": 2}, value=1)
+        window.data = SaveData(run=RunState(seed=4, inventory=[gear]))
+        window.refresh_all()
+        self.assertTrue(window.handle_slot_drop("inventory|0|drag-weapon|", window.equipment_slots["weapon"]))
+        self.assertEqual(window.data.run.equipment["weapon"].id, "drag-weapon")
+        self.assertEqual(window.data.run.inventory, [])
         window.settings.resolution = "1366x768"
         window.settings.fullscreen = False
         window.apply_resolution()
