@@ -8,16 +8,18 @@ from pathlib import Path
 from ascii_climb import content
 from ascii_climb.i18n import Translator
 from ascii_climb.encounters import apply_encounter
-from ascii_climb.models import Item, LifetimeStats, RunState, SaveData
+from ascii_climb.models import GameSettings, Item, LifetimeStats, RunState, SaveData
 from ascii_climb.save import (
     create_save_slot,
     delete_save_slot,
     import_legacy_save,
     list_save_slots,
     load_save_slot,
+    load_settings,
     rename_save_slot,
     save_game,
     save_save_slot,
+    save_settings,
 )
 from ascii_climb.stats import record_failed_run, record_item_collected, record_successful_run
 
@@ -69,6 +71,14 @@ class SaveSlotTests(unittest.TestCase):
             self.assertIsNotNone(slot_id)
             self.assertEqual(load_save_slot(slot_id, save_dir).meta.gold, 12)
             self.assertIsNone(import_legacy_save(legacy_path=legacy_path, save_dir=save_dir))
+
+    def test_split_settings_volume_round_trip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "settings.json"
+            save_settings(GameSettings(sfx_volume=22, music_volume=44), path)
+            loaded = load_settings(path)
+        self.assertEqual(loaded.sfx_volume, 22)
+        self.assertEqual(loaded.music_volume, 44)
 
 
 class LifetimeStatsTests(unittest.TestCase):
@@ -217,6 +227,8 @@ class QtSmokeTests(unittest.TestCase):
         app = QApplication.instance() or QApplication([])
         window = AspyriaWindow()
         window.show()
+        self.assertEqual(window.stack.currentWidget(), window.disclaimer_page)
+        window.show_menu()
         self.assertEqual(window.stack.currentWidget(), window.menu_page)
         self.assertEqual(window.sound.current_music_key, "menu")
         menu_buttons = window.menu_page.findChildren(QPushButton)
@@ -249,6 +261,18 @@ class QtSmokeTests(unittest.TestCase):
         )
         fleeing_dialog.reject()
         self.assertTrue(fleeing_dialog.result.fled)
+        live_dialog = FightReplayDialog(
+            None,
+            make_sprite_pixmap("player"),
+            make_sprite_pixmap("enemy"),
+            window,
+            rng=random.Random(2),
+            meta=MetaState(),
+            run=RunState(seed=3),
+        )
+        live_dialog.stance_combo.setCurrentText("reckless")
+        self.assertIn("Reckless", live_dialog.action.text())
+        live_dialog.close()
         window.settings.resolution = "1366x768"
         window.settings.fullscreen = False
         window.apply_resolution()

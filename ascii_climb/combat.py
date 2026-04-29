@@ -197,18 +197,26 @@ def enemy_dialogue(enemy: EnemyTemplate, key: str, fallback: str) -> str:
     return enemy.dialogue.get(key, fallback)
 
 
-def maybe_break_reckless_item(rng: random.Random, run: RunState, logs: List[str]) -> None:
+def maybe_break_reckless_item(rng: random.Random, run: RunState, logs: List[str]) -> dict | None:
     if rng.random() >= 0.20:
-        return
+        return None
     equipped = run.equipped_items()
     if not equipped:
-        return
+        return None
     item = rng.choice(equipped)
     for slot, equipped_item in run.equipment.items():
         if equipped_item and equipped_item.id == item.id:
             run.equipment[slot] = None
-            logs.append(f"Reckless strain shatters {item.name}.")
-            return
+            message = f"Reckless strain shatters {item.name}."
+            logs.append(message)
+            return {
+                "actor": "system",
+                "message": message,
+                "item_broken": True,
+                "item_name": item.name,
+                "item_slot": slot,
+            }
+    return None
 
 
 def run_combat(
@@ -294,7 +302,17 @@ def run_combat(
                 }
             )
             if stance == "reckless":
-                maybe_break_reckless_item(rng, run, logs)
+                broken_event = maybe_break_reckless_item(rng, run, logs)
+                if broken_event:
+                    broken_event.update(
+                        {
+                            "player_hp": run.current_hp,
+                            "player_max_hp": max_hp,
+                            "enemy_hp": hp_left,
+                            "enemy_max_hp": enemy_hp,
+                        }
+                    )
+                    events.append(broken_event)
             if hp_left <= 0:
                 break
             if attack_no == 0 and attacks > 1:
@@ -410,7 +428,17 @@ def run_combat_turn(
         logs.append(message)
         events.append(_combat_event("player", message, run.current_hp, max_hp, hp_left, enemy_hp, damage=damage, tags=tags))
         if stance == "reckless":
-            maybe_break_reckless_item(rng, run, logs)
+            broken_event = maybe_break_reckless_item(rng, run, logs)
+            if broken_event:
+                broken_event.update(
+                    {
+                        "player_hp": run.current_hp,
+                        "player_max_hp": max_hp,
+                        "enemy_hp": hp_left,
+                        "enemy_max_hp": enemy_hp,
+                    }
+                )
+                events.append(broken_event)
         if hp_left <= 0:
             break
         if attack_no == 0 and attacks > 1:
@@ -523,6 +551,7 @@ def handle_victory(
     run.coins += coin_reward
     if enemy.corrupted:
         run.corrupted_kills += 1
+    run.enemies_killed += 1
     levels_gained = []
     while run.xp >= run.level * 100:
         run.xp -= run.level * 100

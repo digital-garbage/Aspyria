@@ -83,7 +83,8 @@ def create_save_slot(name: str, data: SaveData | None = None, save_dir: Path = S
 
 def list_save_slots(save_dir: Path = SAVES_DIR) -> list[SaveSlotSummary]:
     ensure_save_dir(save_dir)
-    import_legacy_save(save_dir=save_dir)
+    if save_dir == SAVES_DIR:
+        import_legacy_save(save_dir=save_dir)
     summaries = []
     for path in sorted(save_dir.glob("*.json")):
         try:

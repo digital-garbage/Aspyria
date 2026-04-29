@@ -242,6 +242,7 @@ class RunState:
     random_gear_offer_cost: int = 0
     timed_stat_modifiers: List[dict] = field(default_factory=list)
     medkits_bought: int = 0
+    enemies_killed: int = 0
 
     def equipped_items(self) -> List[Item]:
         return [item for item in self.equipment.values() if item is not None]
@@ -292,6 +293,7 @@ class RunState:
             "random_gear_offer_cost": self.random_gear_offer_cost,
             "timed_stat_modifiers": self.timed_stat_modifiers,
             "medkits_bought": self.medkits_bought,
+            "enemies_killed": self.enemies_killed,
         }
 
     @classmethod
@@ -339,6 +341,7 @@ class RunState:
             random_gear_offer_cost=int(data.get("random_gear_offer_cost", 0)),
             timed_stat_modifiers=list(data.get("timed_stat_modifiers", [])),
             medkits_bought=int(data.get("medkits_bought", 0)),
+            enemies_killed=int(data.get("enemies_killed", 0)),
         )
 
 
@@ -506,7 +509,8 @@ class SaveData:
 @dataclass
 class GameSettings:
     language: str = "en"
-    sound_volume: int = 70
+    sfx_volume: int = 70
+    music_volume: int = 70
     resolution: str = "1280x720"
     fullscreen: bool = False
     enabled_mods: List[str] = field(default_factory=list)
@@ -516,7 +520,8 @@ class GameSettings:
     def to_dict(self) -> dict:
         return {
             "language": self.language,
-            "sound_volume": self.sound_volume,
+            "sfx_volume": self.sfx_volume,
+            "music_volume": self.music_volume,
             "resolution": self.resolution,
             "fullscreen": self.fullscreen,
             "enabled_mods": self.enabled_mods,
@@ -526,9 +531,11 @@ class GameSettings:
 
     @classmethod
     def from_dict(cls, data: dict) -> "GameSettings":
+        legacy_volume = int(data.get("sound_volume", 70))
         return cls(
             language=data.get("language", "en"),
-            sound_volume=int(data.get("sound_volume", 70)),
+            sfx_volume=int(data.get("sfx_volume", legacy_volume)),
+            music_volume=int(data.get("music_volume", legacy_volume)),
             resolution=data.get("resolution", "1280x720"),
             fullscreen=bool(data.get("fullscreen", False)),
             enabled_mods=list(data.get("enabled_mods", [])),

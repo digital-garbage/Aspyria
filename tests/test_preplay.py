@@ -139,9 +139,11 @@ class CombatFlowTests(unittest.TestCase):
         run = RunState()
         run.equipment["weapon"] = Item("w", "Test Blade", "weapon", "common", "used", 1, {"ATK": 1}, value=1)
         logs = []
-        maybe_break_reckless_item(random.Random(1), run, logs)
+        event = maybe_break_reckless_item(random.Random(1), run, logs)
         self.assertIsNone(run.equipment["weapon"])
         self.assertIn("shatters", logs[0])
+        self.assertTrue(event["item_broken"])
+        self.assertEqual(event["item_slot"], "weapon")
 
     def test_scout_preview_does_not_mutate_run_counter(self):
         run = RunState(seed=12, rng_counter=3)
@@ -284,11 +286,13 @@ class HpAndEventTests(unittest.TestCase):
 
 class PresentationAndAudioTests(unittest.TestCase):
     def test_sound_manager_tracks_music_key_without_audio_backend(self):
-        manager = SoundManager(Path("assets/sounds"), volume=70, music_root=Path("assets/music"))
+        manager = SoundManager(Path("assets/sounds"), sfx_volume=70, music_root=Path("assets/music"), music_volume=60)
         manager.play("click")
         self.assertEqual(manager.last_effect_key, "click")
         manager.set_music("menu")
         self.assertEqual(manager.current_music_key, "menu")
+        self.assertAlmostEqual(manager.sfx_volume, 0.7)
+        self.assertAlmostEqual(manager.music_volume, 0.6)
 
     def test_opening_balance_values_stay_softened(self):
         meta = MetaState()

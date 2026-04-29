@@ -46,6 +46,18 @@ def replace_equipped_item(run: RunState, item: Item, keep_old: bool) -> Item | N
     return old
 
 
+def unequip_item(meta: MetaState, run: RunState, slot: str) -> Tuple[bool, str]:
+    item = run.equipment.get(slot)
+    if item is None:
+        return False, "No item equipped there."
+    if not can_take_item(meta, run):
+        return False, "Inventory is full."
+    run.equipment[slot] = None
+    run.inventory.append(item)
+    _adjust_current_hp_for_equipment_delta(run, -item.stats.get("HP", 0.0))
+    return True, f"Moved {item.name} to inventory."
+
+
 def _adjust_current_hp_for_equipment_delta(run: RunState, hp_delta: float) -> None:
     if hp_delta:
         run.current_hp = max(1, int(run.current_hp + hp_delta))

@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Iterable
 
 try:
-    from PyQt6.QtCore import Qt, QTimer
-    from PyQt6.QtGui import QBrush, QColor, QFont, QFontDatabase, QIcon, QPainter, QPixmap
+    from PyQt6.QtCore import QMimeData, Qt, QTimer
+    from PyQt6.QtGui import QBrush, QColor, QDrag, QFont, QFontDatabase, QIcon, QPainter, QPixmap
     from PyQt6.QtWidgets import (
         QAbstractItemView,
         QApplication,
@@ -27,6 +27,7 @@ try:
         QMessageBox,
         QProgressBar,
         QPushButton,
+        QScrollArea,
         QSizePolicy,
         QSlider,
         QStackedWidget,
@@ -41,8 +42,8 @@ try:
 
     QT_MAJOR = 6
 except ModuleNotFoundError:
-    from PyQt5.QtCore import Qt, QTimer
-    from PyQt5.QtGui import QBrush, QColor, QFont, QFontDatabase, QIcon, QPainter, QPixmap
+    from PyQt5.QtCore import QMimeData, Qt, QTimer
+    from PyQt5.QtGui import QBrush, QColor, QDrag, QFont, QFontDatabase, QIcon, QPainter, QPixmap
     from PyQt5.QtWidgets import (
         QAbstractItemView,
         QApplication,
@@ -61,6 +62,7 @@ except ModuleNotFoundError:
         QMessageBox,
         QProgressBar,
         QPushButton,
+        QScrollArea,
         QSizePolicy,
         QSlider,
         QStackedWidget,
@@ -126,10 +128,12 @@ from ascii_climb.shops import (
     medkit_cost,
     scouting_cost,
     sell_item,
+    unequip_item,
 )
 from ascii_climb.sound import SoundManager
 from ascii_climb.visuals import enhancement_color, item_colors, readable_text_for_backgrounds
 from ascii_climb.stats import (
+    RARITY_RANK,
     add_play_time,
     record_combat_result,
     record_item_collected,
@@ -141,9 +145,21 @@ ROOT = Path(__file__).resolve().parent.parent
 SOUND_ROOT = ROOT / "assets" / "sounds"
 MUSIC_ROOT = ROOT / "assets" / "music"
 FONT_ROOT = ROOT / "assets" / "fonts"
+ICON_ROOT = ROOT / "assets" / "icons"
 LICENSE_PATH = ROOT / "LICENSE.md"
 PIXEL_BODY_FONT = "Tiny5"
 PIXEL_DISPLAY_FONT = "Pixelify Sans"
+INVENTORY_ICON_SHEET = ICON_ROOT / "vendor" / "opengameart-rpg-inventory-icons.png"
+KENNEY_ICON_ROOT = ICON_ROOT / "vendor" / "kenney-game-icons" / "PNG" / "White" / "2x"
+ITEM_ICON_RECTS = {
+    "weapon": (0, 0, 32, 32),
+    "armor": (96, 0, 32, 32),
+    "charm": (64, 32, 32, 32),
+    "boots": (32, 32, 32, 32),
+    "ring": (64, 32, 32, 32),
+    "relic": (96, 32, 32, 32),
+    "fallback": (64, 32, 32, 32),
+}
 
 
 def _user_role():
@@ -169,6 +185,18 @@ def _single_select():
 
 def _multi_select():
     return QAbstractItemView.SelectionMode.MultiSelection if QT_MAJOR == 6 else QAbstractItemView.MultiSelection
+
+
+def _left_button():
+    return Qt.MouseButton.LeftButton if QT_MAJOR == 6 else Qt.LeftButton
+
+
+def _move_action():
+    return Qt.DropAction.MoveAction if QT_MAJOR == 6 else Qt.MoveAction
+
+
+def _control_modifier():
+    return Qt.KeyboardModifier.ControlModifier if QT_MAJOR == 6 else Qt.ControlModifier
 
 
 def _no_edits():
@@ -305,6 +333,7 @@ class FightReplayDialog(QDialog):
         self.stance_combo = QComboBox()
         self.stance_combo.addItems(["steady", "guarded", "reckless"])
         self.stance_combo.setCurrentText(initial_stance)
+        self.stance_combo.currentTextChanged.connect(self.update_stance_description)
         self.turn_button = QPushButton("Attack Turn")
         self.auto_button = QPushButton("Auto")
         self.turn_button.clicked.connect(self.play_turn)
@@ -331,9 +360,13 @@ class FightReplayDialog(QDialog):
             self.auto_button.setEnabled(False)
             QTimer.singleShot(100, self.play_next)
         else:
-            self.action.setText(STANCE_DESCRIPTIONS.get(initial_stance, "Choose stance for this turn."))
+            self.update_stance_description(initial_stance)
             self.close_button.clicked.disconnect()
             self.close_button.clicked.connect(self.reject)
+
+    def update_stance_description(self, stance: str) -> None:
+        if self.result is None:
+            self.action.setText(STANCE_DESCRIPTIONS.get(stance, "Choose stance for this turn."))
 
     def play_next(self) -> None:
         if self.index >= len(self.events):
@@ -351,6 +384,8 @@ class FightReplayDialog(QDialog):
         message = str(event.get("message", ""))
         self.action.setText(message)
         self.log.append(message)
+        if event.get("item_broken"):
+            QMessageBox.information(self, "Item Broken", message, _message_button("Ok"))
         QTimer.singleShot(350, self.play_next)
 
     def play_turn(self) -> None:
@@ -432,6 +467,113 @@ class ItemGradientDelegate(QStyledItemDelegate):
         painter.restore()
 
 
+def item_tooltip(item: Item) -> str:
+    rows = [
+        item.label(),
+        f"Slot: {item.slot}",
+        f"Value: {item.value}",
+        item.stat_line(),
+    ]
+    if item.set_name:
+        rows.append(f"Set: {item.set_name}")
+    if item.drawback:
+        rows.append(f"Drawback: {item.drawback}")
+    return "\n".join(rows)
+
+
+def item_icon_pixmap(item: Item | None, size: int = 36) -> QPixmap:
+    pixmap = QPixmap(size, size)
+    pixmap.fill(QColor("#201b16"))
+    if item is None or not INVENTORY_ICON_SHEET.exists():
+        return pixmap
+    sheet = QPixmap(str(INVENTORY_ICON_SHEET))
+    rect = ITEM_ICON_RECTS.get(item.slot, ITEM_ICON_RECTS["fallback"])
+    icon = sheet.copy(*rect)
+    return icon.scaled(size, size)
+
+
+class ItemSlotWidget(QFrame):
+    def __init__(self, owner, area: str, index: int = -1, equipment_slot: str = ""):
+        super().__init__(owner)
+        self.owner = owner
+        self.area = area
+        self.index = index
+        self.equipment_slot = equipment_slot
+        self.item_id = ""
+        self.drag_start = None
+        self.setAcceptDrops(True)
+        self.setMinimumSize(88, 88)
+        self.setMaximumSize(118, 100)
+        self.setFrameShape(QFrame.Shape.StyledPanel if QT_MAJOR == 6 else QFrame.StyledPanel)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(2)
+        self.icon = QLabel()
+        self.icon.setAlignment(_align_center())
+        self.icon.setFixedSize(42, 42)
+        self.label = QLabel("")
+        self.label.setAlignment(_align_center())
+        self.label.setWordWrap(True)
+        self.label.setFont(_pixel_font(9, family=PIXEL_BODY_FONT))
+        layout.addWidget(self.icon, alignment=_align_center())
+        layout.addWidget(self.label)
+        self.refresh(None, False)
+
+    def refresh(self, item: Item | None, selected: bool = False) -> None:
+        self.item_id = item.id if item else ""
+        self.icon.setPixmap(item_icon_pixmap(item))
+        if item:
+            self.label.setText(item.name)
+            self.setToolTip(item_tooltip(item))
+            top, bottom = item_colors(item)
+            fg = readable_text_for_backgrounds(top, bottom)
+            border = "#ffd166" if selected else top
+            self.setStyleSheet(
+                "QFrame {"
+                f"background: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 {top},stop:1 {bottom});"
+                f"border: 2px solid {border};"
+                "}"
+                f"QLabel {{ background: transparent; color: {fg}; }}"
+            )
+        else:
+            label = self.equipment_slot if self.equipment_slot else f"Slot {self.index + 1}"
+            self.label.setText(label)
+            self.setToolTip("Empty slot")
+            border = "#ffd166" if selected else "#3b3127"
+            self.setStyleSheet(
+                "QFrame { background: #17130f; border: 1px solid "
+                f"{border}; }}"
+                "QLabel { background: transparent; color: #8b8174; }"
+            )
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == _left_button():
+            self.drag_start = event.pos()
+            self.owner.slot_clicked(self)
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if not (event.buttons() & _left_button()):
+            return
+        if not self.item_id and self.area != "equipment":
+            return
+        mime = QMimeData()
+        payload = f"{self.area}|{self.index}|{self.item_id}|{self.equipment_slot}"
+        mime.setText(payload)
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+        drag.setPixmap(self.icon.pixmap() or QPixmap())
+        drag.exec(_move_action())
+
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasText():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:
+        if self.owner.handle_slot_drop(event.mimeData().text(), self):
+            event.acceptProposedAction()
+
+
 class AspyriaWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -444,18 +586,25 @@ class AspyriaWindow(QMainWindow):
         self.current_slot_name = ""
         self.pending_loot: Item | None = None
         self.last_scout_lines: list[str] = []
+        self.selected_inventory_ids: set[str] = set()
+        self.selected_equipment_slot = ""
         self.session_started_at = time.time()
         self.setWindowTitle(self.t("app.title"))
         self.logo_path = self.find_logo_path()
         self.menu_logo_width = 640
         if self.logo_path:
             self.setWindowIcon(QIcon(str(self.logo_path)))
-        self.sound = SoundManager(SOUND_ROOT, self.settings.sound_volume, MUSIC_ROOT)
+        self.sound = SoundManager(
+            SOUND_ROOT,
+            self.settings.sfx_volume,
+            MUSIC_ROOT,
+            self.settings.music_volume,
+        )
         self._build_ui()
         self.apply_theme()
         self.apply_resolution()
         self.refresh_all()
-        self.sound.set_music("menu")
+        self.stack.setCurrentWidget(self.disclaimer_page)
 
     def _register_fonts(self) -> None:
         for path in (
@@ -519,6 +668,8 @@ class AspyriaWindow(QMainWindow):
     def _build_ui(self) -> None:
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
+        self.disclaimer_page = self._build_disclaimer_page()
+        self.brand_page = self._build_brand_page()
         self.menu_page = self._build_main_menu()
         self.game_page = self._build_game_page()
         self.slots_page = self._build_slots_page()
@@ -528,6 +679,8 @@ class AspyriaWindow(QMainWindow):
         self.enhancements_page = self._build_enhancements_page()
         self.credits_page = self._build_credits_page()
         for page in (
+            self.disclaimer_page,
+            self.brand_page,
             self.menu_page,
             self.game_page,
             self.slots_page,
@@ -538,6 +691,41 @@ class AspyriaWindow(QMainWindow):
             self.credits_page,
         ):
             self.stack.addWidget(page)
+
+    def _build_disclaimer_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.addStretch(1)
+        text = QLabel(
+            "This game is currently under development. Preservation of features and format of saves between versions is not guaranteed."
+        )
+        text.setWordWrap(True)
+        text.setAlignment(_align_center())
+        text.setFont(_pixel_font(18, bold=True))
+        layout.addWidget(text)
+        button = QPushButton("OK")
+        button.setMinimumHeight(52)
+        button.clicked.connect(self.show_brand_splash)
+        layout.addWidget(button, alignment=_align_center())
+        layout.addStretch(1)
+        return page
+
+    def _build_brand_page(self) -> QWidget:
+        page = QWidget()
+        page.setStyleSheet("QWidget { background: #000000; color: #ffffff; }")
+        layout = QVBoxLayout(page)
+        layout.addStretch(1)
+        brand = QLabel("DigitalGarbage")
+        brand.setAlignment(_align_center())
+        brand.setFont(_pixel_font(28, bold=True))
+        layout.addWidget(brand)
+        layout.addStretch(1)
+        return page
+
+    def show_brand_splash(self) -> None:
+        self.sound.play("click")
+        self.stack.setCurrentWidget(self.brand_page)
+        QTimer.singleShot(1200, self.show_menu)
 
     def _build_main_menu(self) -> QWidget:
         page = QWidget()
@@ -686,23 +874,28 @@ class AspyriaWindow(QMainWindow):
     def _build_inventory_tab(self) -> None:
         tab = QWidget()
         layout = QGridLayout(tab)
-        self.equipment_table = QTableWidget(0, 3)
-        self.equipment_table.setHorizontalHeaderLabels(["Slot", "Item", "Stats"])
-        self.equipment_table.horizontalHeader().setSectionResizeMode(_stretch_mode())
-        self.equipment_table.verticalHeader().setVisible(False)
-        self.equipment_table.setEditTriggers(_no_edits())
-        layout.addWidget(self.equipment_table, 0, 0, 1, 3)
-        self.inventory_table = self._make_inventory_table()
-        layout.addWidget(self.inventory_table, 1, 0, 1, 3)
+        equipment_box = QGroupBox("Equipment")
+        equipment_layout = QGridLayout(equipment_box)
+        self.equipment_slots = {}
+        for index, slot in enumerate(EQUIPMENT_SLOTS):
+            widget = ItemSlotWidget(self, "equipment", index, slot)
+            self.equipment_slots[slot] = widget
+            equipment_layout.addWidget(widget, index // 3, index % 3)
+        layout.addWidget(equipment_box, 0, 0, 1, 4)
+        inventory_box, self.inventory_slot_grid = self._make_inventory_slot_grid()
+        layout.addWidget(inventory_box, 1, 0, 1, 4)
         self.equip_button = QPushButton(self.t("game.equip"))
+        self.unequip_button = QPushButton("Take Off")
         self.sell_button = QPushButton(self.t("game.sell"))
         self.drop_button = QPushButton(self.t("game.drop"))
         self.equip_button.clicked.connect(self._button_action(self.equip_selected))
+        self.unequip_button.clicked.connect(self._button_action(self.unequip_selected))
         self.sell_button.clicked.connect(self._button_action(self.sell_selected))
         self.drop_button.clicked.connect(self._button_action(self.drop_selected))
         layout.addWidget(self.equip_button, 2, 0)
-        layout.addWidget(self.sell_button, 2, 1)
-        layout.addWidget(self.drop_button, 2, 2)
+        layout.addWidget(self.unequip_button, 2, 1)
+        layout.addWidget(self.sell_button, 2, 2)
+        layout.addWidget(self.drop_button, 2, 3)
         self.tabs.addTab(tab, self.t("game.inventory"))
 
     def _build_shop_tab(self) -> None:
@@ -727,30 +920,26 @@ class AspyriaWindow(QMainWindow):
             button.clicked.connect(lambda checked=False, selected=size: self.buy_medkit(selected))
             medkit_row.addWidget(button)
         layout.addLayout(medkit_row, 2, 0, 1, 5)
-        self.shop_inventory_table = self._make_inventory_table()
-        layout.addWidget(self.shop_inventory_table, 3, 0, 1, 5)
+        shop_inventory_box, self.shop_inventory_slot_grid = self._make_inventory_slot_grid("shop_inventory")
+        layout.addWidget(shop_inventory_box, 3, 0, 1, 5)
         self.tabs.addTab(tab, self.t("game.shop"))
 
-    def _make_inventory_table(self) -> QTableWidget:
-        table = QTableWidget(0, 7)
-        table.setHorizontalHeaderLabels(
-            [
-                self.t("table.item"),
-                self.t("table.slot"),
-                self.t("table.rarity"),
-                self.t("table.quality"),
-                "iLvl",
-                self.t("table.value"),
-                self.t("table.stats"),
-            ]
-        )
-        table.horizontalHeader().setSectionResizeMode(_stretch_mode())
-        table.verticalHeader().setVisible(False)
-        table.setSelectionBehavior(_select_rows())
-        table.setSelectionMode(_multi_select())
-        table.setEditTriggers(_no_edits())
-        table.setItemDelegateForColumn(0, ItemGradientDelegate(table))
-        return table
+    def _make_inventory_slot_grid(self, area: str = "inventory") -> tuple[QGroupBox, QGridLayout]:
+        box = QGroupBox("Inventory")
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setMinimumHeight(230)
+        container = QWidget()
+        grid = QGridLayout(container)
+        grid.setSpacing(8)
+        scroll.setWidget(container)
+        layout = QVBoxLayout(box)
+        layout.addWidget(scroll)
+        if area == "inventory":
+            self.inventory_slots = []
+        else:
+            self.shop_inventory_slots = []
+        return box, grid
 
     def _build_slots_page(self) -> QWidget:
         page, layout = self._build_page_header(self.t("slot.title"), self.show_menu)
@@ -856,9 +1045,12 @@ class AspyriaWindow(QMainWindow):
         self.language_combo = QComboBox()
         self.language_combo.addItems(["en", "ru"])
         self.language_combo.setCurrentText(self.settings.language)
-        self.volume_slider = QSlider(_horizontal())
-        self.volume_slider.setRange(0, 100)
-        self.volume_slider.setValue(self.settings.sound_volume)
+        self.sfx_volume_slider = QSlider(_horizontal())
+        self.sfx_volume_slider.setRange(0, 100)
+        self.sfx_volume_slider.setValue(self.settings.sfx_volume)
+        self.music_volume_slider = QSlider(_horizontal())
+        self.music_volume_slider.setRange(0, 100)
+        self.music_volume_slider.setValue(self.settings.music_volume)
         self.resolution_combo = QComboBox()
         self.resolution_combo.addItems(RESOLUTIONS)
         self.resolution_combo.setCurrentText("Fullscreen" if self.settings.fullscreen else self.settings.resolution)
@@ -866,11 +1058,13 @@ class AspyriaWindow(QMainWindow):
         self.fullscreen_check.setChecked(self.settings.fullscreen)
         form.addWidget(QLabel(self.t("settings.language")), 0, 0)
         form.addWidget(self.language_combo, 0, 1)
-        form.addWidget(QLabel(self.t("settings.volume")), 1, 0)
-        form.addWidget(self.volume_slider, 1, 1)
-        form.addWidget(QLabel(self.t("settings.resolution")), 2, 0)
-        form.addWidget(self.resolution_combo, 2, 1)
-        form.addWidget(self.fullscreen_check, 3, 1)
+        form.addWidget(QLabel(self.t("settings.sfx_volume")), 1, 0)
+        form.addWidget(self.sfx_volume_slider, 1, 1)
+        form.addWidget(QLabel(self.t("settings.music_volume")), 2, 0)
+        form.addWidget(self.music_volume_slider, 2, 1)
+        form.addWidget(QLabel(self.t("settings.resolution")), 3, 0)
+        form.addWidget(self.resolution_combo, 3, 1)
+        form.addWidget(self.fullscreen_check, 4, 1)
         layout.addLayout(form)
         apply_button = QPushButton(self.t("settings.apply"))
         apply_button.clicked.connect(self._button_action(self.apply_settings))
@@ -1171,6 +1365,15 @@ class AspyriaWindow(QMainWindow):
         if result.consolation_item:
             self.pending_loot = result.consolation_item
             self.handle_loot(result.consolation_item)
+        if result.run_failure and self.data.run and not self.data.run.active:
+            summary = self.run_loss_summary(self.data.run)
+            self.show_run_loss_screen(summary)
+            self.data.run = None
+            self.pending_loot = None
+            self.save_current_slot()
+            self.refresh_all()
+            self.show_menu()
+            return
         if self.data.run and not self.data.run.active:
             self.data.run = None
             self.pending_loot = None
@@ -1216,6 +1419,27 @@ class AspyriaWindow(QMainWindow):
         self.result_panel.setText("\n".join(summary))
         if result.enemy.boss or (not result.victory and not result.fled):
             QMessageBox.information(self, "Battle Result", "\n".join(summary), _message_button("Ok"))
+
+    def run_loss_summary(self, run: RunState) -> list[str]:
+        location = LOCATIONS[run.location_index]
+        all_items = run.inventory + run.equipped_items()
+        rarest = max(
+            all_items,
+            key=lambda item: (RARITY_RANK.get(item.rarity, 0), item.value),
+            default=None,
+        )
+        duration = time.time() - (run.started_at or time.time())
+        return [
+            "The run is lost.",
+            f"Time spent: {format_duration(duration)}",
+            f"Progress: {location.name}, fight {run.fights_in_location}/{location.fights_to_boss}",
+            f"Rarest item: {rarest.label() if rarest else 'none'}",
+            f"Enemies killed: {run.enemies_killed}",
+            f"Ended at: loop {run.loop_tier}, stage {run.location_index + 1} ({location.name})",
+        ]
+
+    def show_run_loss_screen(self, rows: list[str]) -> None:
+        QMessageBox.information(self, "Run Lost", "\n".join(rows), _message_button("Ok"))
 
     def normalize_current_hp(self) -> None:
         run = self.data.run if self.data else None
@@ -1435,6 +1659,26 @@ class AspyriaWindow(QMainWindow):
         self.save_current_slot()
         self.refresh_all()
 
+    def unequip_selected(self) -> None:
+        run = self.data.run if self.data else None
+        if run is None:
+            self.warn(self.t("game.no_active_run"))
+            return
+        slot = self.selected_equipment_slot
+        if not slot:
+            self.warn("Select an equipped item first.")
+            return
+        ok, message = unequip_item(self.data.meta, run, slot)
+        self.log(message)
+        self.sound.play("loot" if ok else "error")
+        if not ok:
+            self.warn(message)
+            return
+        self.selected_equipment_slot = ""
+        self.normalize_current_hp()
+        self.save_current_slot()
+        self.refresh_all()
+
     def sell_selected(self) -> None:
         items = self.selected_inventory_items()
         run = self.data.run if self.data else None
@@ -1560,14 +1804,16 @@ class AspyriaWindow(QMainWindow):
 
     def apply_settings(self) -> None:
         self.settings.language = self.language_combo.currentText()
-        self.settings.sound_volume = self.volume_slider.value()
+        self.settings.sfx_volume = self.sfx_volume_slider.value()
+        self.settings.music_volume = self.music_volume_slider.value()
         selected_resolution = self.resolution_combo.currentText()
         self.settings.fullscreen = self.fullscreen_check.isChecked() or selected_resolution == "Fullscreen"
         if selected_resolution != "Fullscreen":
             self.settings.resolution = selected_resolution
         save_settings(self.settings)
         self.t = Translator(self.settings.language, self.settings.enabled_mods).t
-        self.sound.set_volume(self.settings.sound_volume)
+        self.sound.set_sfx_volume(self.settings.sfx_volume)
+        self.sound.set_music_volume(self.settings.music_volume)
         self.apply_resolution()
         self.warn("Settings saved. Restart the window to refresh every translated label.")
 
@@ -1632,18 +1878,80 @@ class AspyriaWindow(QMainWindow):
         run = self.data.run if self.data else None
         if run is None:
             return []
-        table = self.shop_inventory_table if self.tabs.currentWidget() == self.tabs.widget(2) else self.inventory_table
-        rows = sorted({index.row() for index in table.selectedIndexes()})
-        selected = []
-        for row in rows:
-            cell = table.item(row, 0)
-            if cell is None:
-                continue
-            item_id = cell.data(_user_role())
-            match = next((item for item in run.inventory if item.id == item_id), None)
-            if match:
-                selected.append(match)
-        return selected
+        return [item for item in run.inventory if item.id in self.selected_inventory_ids]
+
+    def slot_clicked(self, slot: ItemSlotWidget) -> None:
+        modifiers = QApplication.keyboardModifiers()
+        multi = bool(modifiers & _control_modifier())
+        if slot.area == "equipment":
+            self.selected_equipment_slot = slot.equipment_slot
+            if not multi:
+                self.selected_inventory_ids.clear()
+        elif slot.item_id:
+            if not multi:
+                self.selected_inventory_ids = {slot.item_id}
+            elif slot.item_id in self.selected_inventory_ids:
+                self.selected_inventory_ids.remove(slot.item_id)
+            else:
+                self.selected_inventory_ids.add(slot.item_id)
+            self.selected_equipment_slot = ""
+        elif not multi:
+            self.selected_inventory_ids.clear()
+            self.selected_equipment_slot = ""
+        self.refresh_inventory_tables()
+
+    def handle_slot_drop(self, payload: str, target: ItemSlotWidget) -> bool:
+        run = self.data.run if self.data else None
+        if run is None:
+            return False
+        parts = payload.split("|")
+        if len(parts) != 4:
+            return False
+        source_area, source_index_text, item_id, source_slot = parts
+        try:
+            source_index = int(source_index_text)
+        except ValueError:
+            source_index = -1
+        if source_area in {"inventory", "shop_inventory"}:
+            item = next((row for row in run.inventory if row.id == item_id), None)
+            if item is None:
+                return False
+            if target.area == "equipment":
+                if target.equipment_slot != item.slot:
+                    self.warn(f"{item.name} belongs in {item.slot}.")
+                    return False
+                self.log(equip_item(run, item))
+                self.selected_inventory_ids.clear()
+                self.selected_equipment_slot = target.equipment_slot
+            elif target.area in {"inventory", "shop_inventory"}:
+                if source_index < 0 or source_index >= len(run.inventory):
+                    source_index = run.inventory.index(item)
+                target_index = max(0, min(target.index, len(run.inventory) - 1))
+                run.inventory.pop(source_index)
+                run.inventory.insert(target_index, item)
+                self.selected_inventory_ids = {item.id}
+            else:
+                return False
+        elif source_area == "equipment":
+            if target.area not in {"inventory", "shop_inventory"}:
+                return False
+            ok, message = unequip_item(self.data.meta, run, source_slot)
+            self.log(message)
+            if not ok:
+                self.warn(message)
+                return False
+            item = run.inventory[-1]
+            target_index = max(0, min(target.index, len(run.inventory) - 1))
+            run.inventory.remove(item)
+            run.inventory.insert(target_index, item)
+            self.selected_inventory_ids = {item.id}
+            self.selected_equipment_slot = ""
+        else:
+            return False
+        self.normalize_current_hp()
+        self.save_current_slot()
+        self.refresh_all()
+        return True
 
     def selected_upgrade_stat(self) -> str | None:
         row = self.upgrade_table.currentRow()
@@ -1674,6 +1982,7 @@ class AspyriaWindow(QMainWindow):
             self.fight_button,
             self.scout_button,
             self.equip_button,
+            self.unequip_button,
             self.sell_button,
             self.drop_button,
         ):
@@ -1731,45 +2040,30 @@ class AspyriaWindow(QMainWindow):
         self.fill_table(self.stats_table, rows)
 
     def refresh_inventory_tables(self) -> None:
-        for table in (self.equipment_table, self.inventory_table, self.shop_inventory_table):
-            table.setRowCount(0)
+        for grid in (self.inventory_slot_grid, self.shop_inventory_slot_grid):
+            while grid.count():
+                item = grid.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
         run = self.data.run if self.data else None
         if run is None:
+            for widget in self.equipment_slots.values():
+                widget.refresh(None, False)
             return
-        self.equipment_table.setRowCount(len(EQUIPMENT_SLOTS))
-        for row, slot in enumerate(EQUIPMENT_SLOTS):
+        for slot, widget in self.equipment_slots.items():
             item = run.equipment.get(slot)
-            values = [slot, item.label() if item else "-", item.stat_line() if item else ""]
-            for col, value in enumerate(values):
-                cell = QTableWidgetItem(str(value))
-                if item and col == 1:
-                    rarity_color, _ = item_colors(item)
-                    cell.setBackground(QBrush(QColor(rarity_color)))
-                    cell.setForeground(QBrush(QColor(readable_text_for_backgrounds(rarity_color))))
-                self.equipment_table.setItem(row, col, cell)
-        rows = [
-            (item, [item.label(), item.slot, item.rarity, item.quality, str(item.ilevel), str(item.value), item.stat_line()])
-            for item in run.inventory
-        ]
-        for table in (self.inventory_table, self.shop_inventory_table):
-            table.setRowCount(len(rows))
-            for row, (item, values) in enumerate(rows):
-                rarity_color, quality_color = item_colors(item)
-                for col, value in enumerate(values):
-                    cell = QTableWidgetItem(value)
-                    if col == 0:
-                        cell.setData(_role_offset(1), rarity_color)
-                        cell.setData(_role_offset(2), quality_color)
-                        cell.setForeground(QBrush(QColor(readable_text_for_backgrounds(rarity_color, quality_color))))
-                    elif col == 2:
-                        cell.setBackground(QBrush(QColor(rarity_color)))
-                        cell.setForeground(QBrush(QColor(readable_text_for_backgrounds(rarity_color))))
-                    elif col == 3:
-                        cell.setBackground(QBrush(QColor(quality_color)))
-                        cell.setForeground(QBrush(QColor(readable_text_for_backgrounds(quality_color))))
-                    if col == 0:
-                        cell.setData(_user_role(), item.id)
-                    table.setItem(row, col, cell)
+            widget.refresh(item, self.selected_equipment_slot == slot)
+        capacity = self.data.meta.inventory_capacity()
+        self.selected_inventory_ids = {
+            item_id for item_id in self.selected_inventory_ids if any(item.id == item_id for item in run.inventory)
+        }
+        for area, grid in (("inventory", self.inventory_slot_grid), ("shop_inventory", self.shop_inventory_slot_grid)):
+            for index in range(capacity):
+                widget = ItemSlotWidget(self, area, index)
+                item = run.inventory[index] if index < len(run.inventory) else None
+                widget.refresh(item, bool(item and item.id in self.selected_inventory_ids))
+                grid.addWidget(widget, index // 6, index % 6)
 
     def refresh_shop_tab(self) -> None:
         run = self.data.run if self.data else None
@@ -1899,6 +2193,18 @@ class AspyriaWindow(QMainWindow):
     def closeEvent(self, event) -> None:
         self.save_current_slot()
         event.accept()
+
+    def keyPressEvent(self, event) -> None:
+        key = event.key()
+        enter_keys = {
+            Qt.Key.Key_Return if QT_MAJOR == 6 else Qt.Key_Return,
+            Qt.Key.Key_Enter if QT_MAJOR == 6 else Qt.Key_Enter,
+            Qt.Key.Key_Space if QT_MAJOR == 6 else Qt.Key_Space,
+        }
+        if self.stack.currentWidget() == self.disclaimer_page and key in enter_keys:
+            self.show_brand_splash()
+            return
+        super().keyPressEvent(event)
 
 
 def format_duration(seconds: float) -> str:

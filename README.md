@@ -151,7 +151,7 @@ Sound effects: Kenney Interface Sounds – CC0 1.0 Universal
 
 Fonts: Tiny5 by Stefan Schmidt & Pixelify Sans by Stefie Justprince
 
-Full asset details and licenses are in ASSETS.md.
+Full asset details and licenses are in ASSETS.md. Source license terms are in LICENSE.md, and commercial-use notes are in COMMERCIAL_USE.md.
 
 # License
 

@@ -59,6 +59,8 @@
   "mods.warning_missing": "This save references missing or disabled mods.",
   "settings.language": "Language",
   "settings.volume": "Sound volume",
+  "settings.sfx_volume": "SFX Volume",
+  "settings.music_volume": "Music Volume",
   "settings.resolution": "Resolution",
   "settings.fullscreen": "Fullscreen",
   "settings.apply": "Apply",

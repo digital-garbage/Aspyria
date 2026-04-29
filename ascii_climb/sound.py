@@ -42,7 +42,13 @@ MUSIC_FILES = {
 
 
 class SoundManager:
-    def __init__(self, root: Path, volume: int = 70, music_root: Path | None = None):
+    def __init__(
+        self,
+        root: Path,
+        sfx_volume: int = 70,
+        music_root: Path | None = None,
+        music_volume: int | None = None,
+    ):
         self.root = root
         self.music_root = music_root or root
         has_app = QCoreApplication is not None and QCoreApplication.instance() is not None
@@ -61,7 +67,8 @@ class SoundManager:
             and os.environ.get("QT_QPA_PLATFORM") != "offscreen"
         )
         self.effects = {}
-        self.volume = 0.0
+        self.sfx_volume = 0.0
+        self.music_volume = 0.0
         self.last_effect_key = ""
         self.current_music_key = ""
         self._music_url = None
@@ -81,21 +88,29 @@ class SoundManager:
                 self.audio_output = QAudioOutput()
                 self.player.setAudioOutput(self.audio_output)
             self._connect_music_loop()
-        self.set_volume(volume)
+        self.set_sfx_volume(sfx_volume)
+        self.set_music_volume(sfx_volume if music_volume is None else music_volume)
 
     def set_volume(self, volume: int) -> None:
-        self.volume = max(0.0, min(1.0, volume / 100.0))
+        self.set_sfx_volume(volume)
+        self.set_music_volume(volume)
+
+    def set_sfx_volume(self, volume: int) -> None:
+        self.sfx_volume = max(0.0, min(1.0, volume / 100.0))
         for effect in self.effects.values():
-            effect.setVolume(self.volume)
+            effect.setVolume(self.sfx_volume)
+
+    def set_music_volume(self, volume: int) -> None:
+        self.music_volume = max(0.0, min(1.0, volume / 100.0))
         if self.audio_output is not None:
-            self.audio_output.setVolume(self.volume)
+            self.audio_output.setVolume(self.music_volume)
         elif self.player is not None and hasattr(self.player, "setVolume"):
-            self.player.setVolume(int(self.volume * 100))
+            self.player.setVolume(int(self.music_volume * 100))
 
     def play(self, key: str) -> None:
         self.last_effect_key = key
         effect = self.effects.get(key)
-        if effect is not None and self.volume > 0:
+        if effect is not None and self.sfx_volume > 0:
             effect.play()
 
     def set_music(self, key: str | None) -> None:

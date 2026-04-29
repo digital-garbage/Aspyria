@@ -14,10 +14,10 @@ from ascii_climb.meta import (
     upgrade_bonus_for_level,
     upgrade_cost,
 )
-from ascii_climb.models import Item, MetaState, RunState, SaveData
+from ascii_climb.models import GameSettings, Item, MetaState, RunState, SaveData
 from ascii_climb.progression import EnhancementOption, apply_enhancement
 from ascii_climb.save import load_game, save_game
-from ascii_climb.shops import add_item_to_inventory, craft_fusion, equip_item
+from ascii_climb.shops import add_item_to_inventory, craft_fusion, equip_item, unequip_item
 
 
 class CoreFormulaTests(unittest.TestCase):
@@ -137,6 +137,46 @@ class RunSystemTests(unittest.TestCase):
         self.assertEqual(loaded.meta.gold, 12)
         self.assertEqual(loaded.run.seed, 42)
         self.assertEqual(loaded.run.loop_tier, 2)
+
+    def test_permanent_upgrades_and_slots_save_load_round_trip(self):
+        import tempfile
+        from pathlib import Path
+
+        data = SaveData(meta=MetaState(gold=321), run=RunState(seed=42))
+        data.meta.upgrades["ATK"] = 4
+        data.meta.upgrades["HP"] = 2
+        data.meta.inventory_slots_purchased = 3
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "save.json"
+            save_game(data, path)
+            loaded = load_game(path)
+        self.assertEqual(loaded.meta.gold, 321)
+        self.assertEqual(loaded.meta.upgrades["ATK"], 4)
+        self.assertEqual(loaded.meta.upgrades["HP"], 2)
+        self.assertEqual(loaded.meta.inventory_capacity(), 15)
+
+    def test_settings_split_volume_migrates_legacy_value(self):
+        settings = GameSettings.from_dict({"sound_volume": 33})
+        self.assertEqual(settings.sfx_volume, 33)
+        self.assertEqual(settings.music_volume, 33)
+        self.assertNotIn("sound_volume", settings.to_dict())
+
+    def test_unequip_item_requires_inventory_space(self):
+        meta = MetaState()
+        run = RunState(current_hp=50)
+        item = Item("hp", "Health Ring", "ring", "rare", "used", 1, {"HP": 8}, value=1)
+        run.equipment["ring"] = item
+        ok, message = unequip_item(meta, run, "ring")
+        self.assertTrue(ok, message)
+        self.assertIn(item, run.inventory)
+        self.assertEqual(run.current_hp, 42)
+
+        full = RunState()
+        full.equipment["weapon"] = Item("w", "Blade", "weapon", "common", "used", 1, {}, value=1)
+        full.inventory = [Item(str(i), "Rock", "charm", "common", "used", 1, {}, value=1) for i in range(meta.inventory_capacity())]
+        ok, message = unequip_item(meta, full, "weapon")
+        self.assertFalse(ok)
+        self.assertIn("full", message.lower())
 
     def test_final_gold_payout_increases_with_bosses(self):
         meta = MetaState()
