@@ -1,9 +1,10 @@
 import random
 import unittest
 
-from ascii_climb.combat import apply_defeat_penalty, enemy_scale, run_combat
+from ascii_climb.combat import apply_defeat_penalty, apply_vampirism, enemy_scale, resolve_defeat_penalty, run_combat
 from ascii_climb.content import ENEMIES, LOCATIONS
 from ascii_climb.loot import roll_item
+from ascii_climb.loot import improve_quality
 from ascii_climb.meta import (
     buy_inventory_slot,
     buy_upgrade,
@@ -14,19 +15,20 @@ from ascii_climb.meta import (
     upgrade_bonus_for_level,
     upgrade_cost,
 )
-from ascii_climb.models import Item, MetaState, RunState, SaveData
+from ascii_climb.models import GameSettings, Item, MetaState, RunState, SaveData
 from ascii_climb.progression import EnhancementOption, apply_enhancement
 from ascii_climb.save import load_game, save_game
-from ascii_climb.shops import add_item_to_inventory, craft_fusion, equip_item
+from ascii_climb.shops import add_item_to_inventory, craft_fusion, equip_item, unequip_item
 
 
 class CoreFormulaTests(unittest.TestCase):
     def test_upgrade_cost_bonus_and_refund(self):
-        meta = MetaState(gold=124)
-        self.assertEqual(upgrade_bonus_for_level(3), 6)
+        meta = MetaState(gold=15)
+        self.assertEqual(upgrade_bonus_for_level(3), 3)
+        self.assertEqual(upgrade_bonus_for_level(5), 6)
         self.assertEqual(upgrade_cost("ATK", 1), 4)
-        self.assertEqual(upgrade_cost("ATK", 2), 20)
-        self.assertEqual(upgrade_cost("ATK", 3), 100)
+        self.assertEqual(upgrade_cost("ATK", 2), 5)
+        self.assertEqual(upgrade_cost("ATK", 3), 6)
 
         self.assertTrue(buy_upgrade(meta, "ATK")[0])
         self.assertTrue(buy_upgrade(meta, "ATK")[0])
@@ -34,7 +36,7 @@ class CoreFormulaTests(unittest.TestCase):
         self.assertEqual(meta.gold, 0)
         self.assertEqual(meta.upgrades["ATK"], 3)
         self.assertTrue(refund_upgrade(meta, "ATK")[0])
-        self.assertEqual(meta.gold, 50)
+        self.assertEqual(meta.gold, 3)
         self.assertEqual(meta.upgrades["ATK"], 2)
 
     def test_inventory_slot_buy_and_refund(self):
@@ -44,6 +46,17 @@ class CoreFormulaTests(unittest.TestCase):
         self.assertTrue(refund_inventory_slot(meta)[0])
         self.assertEqual(meta.inventory_capacity(), 12)
         self.assertEqual(meta.gold, 87)
+
+    def test_gold_acquisition_is_permanent_only(self):
+        meta = MetaState()
+        meta.upgrades["Gold Acquisition Boost%"] = 2
+        run = RunState(seed=1, completed_bosses=1)
+        run.run_buffs["Gold Acquisition Boost%"] = 500
+        run.equipment["charm"] = Item("g", "Gold Charm", "charm", "common", "used", 1, {"Gold Acquisition Boost%": 500}, value=1)
+        self.assertEqual(effective_stats(meta, run)["Gold Acquisition Boost%"], upgrade_bonus_for_level(2))
+        boosted = final_gold_payout(meta, run)
+        meta.upgrades["Gold Acquisition Boost%"] = 0
+        self.assertGreater(boosted, final_gold_payout(meta, run))
 
 
 class GearSetTests(unittest.TestCase):
@@ -56,11 +69,11 @@ class GearSetTests(unittest.TestCase):
         run.inventory = [armor, boots, charm]
 
         equip_item(run, armor)
-        self.assertEqual(effective_stats(meta, run)["Evasion%"], 6)
+        self.assertEqual(effective_stats(meta, run)["Evasion%"], 7)
         equip_item(run, boots)
-        self.assertEqual(effective_stats(meta, run)["Evasion%"], 9)
+        self.assertEqual(effective_stats(meta, run)["Evasion%"], 10)
         equip_item(run, charm)
-        self.assertEqual(effective_stats(meta, run)["Evasion%"], 53)
+        self.assertEqual(effective_stats(meta, run)["Evasion%"], 54)
 
     def test_run_enhancement_applies_and_debuff_blocks_boost(self):
         run = RunState(seed=1)
@@ -69,6 +82,22 @@ class GearSetTests(unittest.TestCase):
         run.run_debuffs["CR%"] = 18
         apply_enhancement(run, EnhancementOption("Blocked CR", {"CR%": 5}, {}))
         self.assertNotIn("CR%", run.run_buffs)
+
+    def test_vampirism_comes_from_meta_and_items_and_hones(self):
+        meta = MetaState()
+        meta.upgrades["Vampirism%"] = 2
+        run = RunState(seed=1)
+        item = Item("v", "Blood Signet", "ring", "rare", "trash", 1, {"Vampirism%": 4}, value=100)
+        run.equipment["ring"] = item
+        self.assertEqual(effective_stats(meta, run)["Vampirism%"], 6)
+        improve_quality(item)
+        self.assertGreater(effective_stats(meta, run)["Vampirism%"], 6)
+
+    def test_vampirism_heals_after_attack_damage(self):
+        run = RunState(current_hp=40)
+        healed = apply_vampirism(run, 30, {"Vampirism%": 50}, 100)
+        self.assertEqual(healed, 15)
+        self.assertEqual(run.current_hp, 55)
 
 
 class RunSystemTests(unittest.TestCase):
@@ -108,6 +137,8 @@ class RunSystemTests(unittest.TestCase):
         logs = []
         for _ in range(4):
             apply_defeat_penalty(random.Random(1), meta, run, logs)
+            if run.pending_defeat_penalty:
+                resolve_defeat_penalty(meta, run, run.pending_defeat_penalty["options"][0], logs)
         self.assertFalse(run.active)
         self.assertGreater(meta.gold, 0)
 
@@ -137,6 +168,46 @@ class RunSystemTests(unittest.TestCase):
         self.assertEqual(loaded.meta.gold, 12)
         self.assertEqual(loaded.run.seed, 42)
         self.assertEqual(loaded.run.loop_tier, 2)
+
+    def test_permanent_upgrades_and_slots_save_load_round_trip(self):
+        import tempfile
+        from pathlib import Path
+
+        data = SaveData(meta=MetaState(gold=321), run=RunState(seed=42))
+        data.meta.upgrades["ATK"] = 4
+        data.meta.upgrades["HP"] = 2
+        data.meta.inventory_slots_purchased = 3
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "save.json"
+            save_game(data, path)
+            loaded = load_game(path)
+        self.assertEqual(loaded.meta.gold, 321)
+        self.assertEqual(loaded.meta.upgrades["ATK"], 4)
+        self.assertEqual(loaded.meta.upgrades["HP"], 2)
+        self.assertEqual(loaded.meta.inventory_capacity(), 15)
+
+    def test_settings_split_volume_migrates_legacy_value(self):
+        settings = GameSettings.from_dict({"sound_volume": 33})
+        self.assertEqual(settings.sfx_volume, 33)
+        self.assertEqual(settings.music_volume, 33)
+        self.assertNotIn("sound_volume", settings.to_dict())
+
+    def test_unequip_item_requires_inventory_space(self):
+        meta = MetaState()
+        run = RunState(current_hp=50)
+        item = Item("hp", "Health Ring", "ring", "rare", "used", 1, {"HP": 8}, value=1)
+        run.equipment["ring"] = item
+        ok, message = unequip_item(meta, run, "ring")
+        self.assertTrue(ok, message)
+        self.assertIn(item, run.inventory)
+        self.assertEqual(run.current_hp, 42)
+
+        full = RunState()
+        full.equipment["weapon"] = Item("w", "Blade", "weapon", "common", "used", 1, {}, value=1)
+        full.inventory = [Item(str(i), "Rock", "charm", "common", "used", 1, {}, value=1) for i in range(meta.inventory_capacity())]
+        ok, message = unequip_item(meta, full, "weapon")
+        self.assertFalse(ok)
+        self.assertIn("full", message.lower())
 
     def test_final_gold_payout_increases_with_bosses(self):
         meta = MetaState()

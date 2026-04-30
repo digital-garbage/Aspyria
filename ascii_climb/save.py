@@ -6,12 +6,13 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from ascii_climb.models import GameSettings, SaveData
+from ascii_climb.models import GameSettings, MetaState, SaveData
 from ascii_climb.state import sanitize_run_state
 
 SAVE_PATH = Path("savegame.json")
 SAVES_DIR = Path("saves")
 SETTINGS_PATH = Path("settings.json")
+PROFILE_PATH = Path("profile.json")
 LEGACY_IMPORT_MARKER = SAVES_DIR / ".legacy_imported"
 
 
@@ -26,6 +27,18 @@ def save_game(data: SaveData, path: Path = SAVE_PATH) -> None:
     sanitize_run_state(data.run)
     with path.open("w", encoding="utf-8") as handle:
         json.dump(data.to_dict(), handle, indent=2, sort_keys=True)
+
+
+def load_profile(path: Path = PROFILE_PATH) -> MetaState:
+    if not path.exists():
+        return MetaState()
+    with path.open("r", encoding="utf-8") as handle:
+        return MetaState.from_dict(json.load(handle))
+
+
+def save_profile(meta: MetaState, path: Path = PROFILE_PATH) -> None:
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(meta.to_dict(), handle, indent=2, sort_keys=True)
 
 
 @dataclass
@@ -75,20 +88,26 @@ def create_save_slot(name: str, data: SaveData | None = None, save_dir: Path = S
         index += 1
     data = data or SaveData()
     sanitize_run_state(data.run)
+    profile_path = _profile_path_for_save_dir(save_dir)
+    save_profile(data.meta, profile_path)
     data.last_played_at = time.time()
-    payload = {"slot_id": slot_id, "name": name.strip() or slot_id, "save": data.to_dict()}
+    payload = {"slot_id": slot_id, "name": name.strip() or slot_id, "save": _slot_save_dict(data)}
     _write_json(slot_path(slot_id, save_dir), payload)
     return slot_id
 
 
 def list_save_slots(save_dir: Path = SAVES_DIR) -> list[SaveSlotSummary]:
     ensure_save_dir(save_dir)
-    import_legacy_save(save_dir=save_dir)
+    if save_dir == SAVES_DIR:
+        import_legacy_save(save_dir=save_dir)
     summaries = []
+    profile_path = _profile_path_for_save_dir(save_dir)
     for path in sorted(save_dir.glob("*.json")):
+        if path == profile_path:
+            continue
         try:
             payload = _read_json(path)
-            data = SaveData.from_dict(payload.get("save", payload))
+            data = _save_data_from_slot_payload(payload, save_dir)
         except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
             continue
         summaries.append(
@@ -108,14 +127,15 @@ def list_save_slots(save_dir: Path = SAVES_DIR) -> list[SaveSlotSummary]:
 
 def load_save_slot(slot_id: str, save_dir: Path = SAVES_DIR) -> SaveData:
     payload = _read_json(slot_path(slot_id, save_dir))
-    return SaveData.from_dict(payload.get("save", payload))
+    return _save_data_from_slot_payload(payload, save_dir)
 
 
 def save_save_slot(slot_id: str, name: str, data: SaveData, save_dir: Path = SAVES_DIR) -> None:
     ensure_save_dir(save_dir)
     sanitize_run_state(data.run)
+    save_profile(data.meta, _profile_path_for_save_dir(save_dir))
     data.last_played_at = time.time()
-    payload = {"slot_id": slot_id, "name": name, "save": data.to_dict()}
+    payload = {"slot_id": slot_id, "name": name, "save": _slot_save_dict(data)}
     _write_json(slot_path(slot_id, save_dir), payload)
 
 
@@ -159,3 +179,28 @@ def _read_json(path: Path) -> dict:
 def _write_json(path: Path, payload: dict) -> None:
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2, sort_keys=True)
+
+
+def _profile_path_for_save_dir(save_dir: Path) -> Path:
+    return PROFILE_PATH if save_dir == SAVES_DIR else save_dir / "profile.json"
+
+
+def _slot_save_dict(data: SaveData) -> dict:
+    payload = data.to_dict()
+    payload.pop("meta", None)
+    return payload
+
+
+def _save_data_from_slot_payload(payload: dict, save_dir: Path) -> SaveData:
+    raw = payload.get("save", payload)
+    profile_path = _profile_path_for_save_dir(save_dir)
+    profile_exists = profile_path.exists()
+    data = SaveData.from_dict(raw)
+    if profile_exists:
+        data.meta = load_profile(profile_path)
+    elif "meta" in raw:
+        data.meta = MetaState.from_dict(raw.get("meta", {}))
+        save_profile(data.meta, profile_path)
+    else:
+        data.meta = load_profile(profile_path)
+    return data

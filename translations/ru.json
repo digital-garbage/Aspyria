@@ -59,6 +59,8 @@
   "mods.warning_missing": "Этот сейв ссылается на отсутствующие или отключенные моды.",
   "settings.language": "Язык",
   "settings.volume": "Громкость звука",
+  "settings.sfx_volume": "Громкость SFX",
+  "settings.music_volume": "Громкость музыки",
   "settings.resolution": "Разрешение",
   "settings.fullscreen": "Полный экран",
   "settings.apply": "Применить",

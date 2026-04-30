@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Iterable
 
 try:
-    from PyQt6.QtCore import Qt, QTimer
-    from PyQt6.QtGui import QBrush, QColor, QFont, QFontDatabase, QIcon, QPainter, QPixmap
+    from PyQt6.QtCore import QMimeData, QPoint, QSize, Qt, QTimer
+    from PyQt6.QtGui import QBrush, QColor, QCursor, QDrag, QFont, QFontDatabase, QIcon, QPainter, QPixmap
     from PyQt6.QtWidgets import (
         QAbstractItemView,
         QApplication,
@@ -27,6 +27,7 @@ try:
         QMessageBox,
         QProgressBar,
         QPushButton,
+        QScrollArea,
         QSizePolicy,
         QSlider,
         QStackedWidget,
@@ -35,14 +36,15 @@ try:
         QTableWidget,
         QTableWidgetItem,
         QTextEdit,
+        QToolTip,
         QVBoxLayout,
         QWidget,
     )
 
     QT_MAJOR = 6
 except ModuleNotFoundError:
-    from PyQt5.QtCore import Qt, QTimer
-    from PyQt5.QtGui import QBrush, QColor, QFont, QFontDatabase, QIcon, QPainter, QPixmap
+    from PyQt5.QtCore import QMimeData, QPoint, QSize, Qt, QTimer
+    from PyQt5.QtGui import QBrush, QColor, QCursor, QDrag, QFont, QFontDatabase, QIcon, QPainter, QPixmap
     from PyQt5.QtWidgets import (
         QAbstractItemView,
         QApplication,
@@ -61,6 +63,7 @@ except ModuleNotFoundError:
         QMessageBox,
         QProgressBar,
         QPushButton,
+        QScrollArea,
         QSizePolicy,
         QSlider,
         QStackedWidget,
@@ -69,13 +72,24 @@ except ModuleNotFoundError:
         QTableWidget,
         QTableWidgetItem,
         QTextEdit,
+        QToolTip,
         QVBoxLayout,
         QWidget,
     )
 
     QT_MAJOR = 5
 
-from ascii_climb.combat import STANCE_DESCRIPTIONS, flee_from_combat, run_combat, run_combat_turn, scout_preview
+from ascii_climb.combat import (
+    DEFEAT_PRICE_COINS,
+    DEFEAT_PRICE_ITEM,
+    DEFEAT_PRICE_STATS,
+    STANCE_DESCRIPTIONS,
+    flee_from_combat,
+    resolve_defeat_penalty,
+    run_combat,
+    run_combat_turn,
+    scout_preview,
+)
 from ascii_climb.content import (
     CONTENT_CONFLICTS,
     CONTENT_WARNINGS,
@@ -87,7 +101,7 @@ from ascii_climb.content import (
 from ascii_climb.encounters import random_event
 from ascii_climb.i18n import Translator
 from ascii_climb.leveling import apply_level_reward, describe_level_reward_for_run, generate_level_reward_options
-from ascii_climb.loot import sell_value
+from ascii_climb.loot import caravan_price, repair_cost, roll_item, sell_value
 from ascii_climb.meta import (
     buy_inventory_slot as buy_meta_inventory_slot,
     buy_upgrade,
@@ -96,8 +110,9 @@ from ascii_climb.meta import (
     refund_inventory_slot as refund_meta_inventory_slot,
     refund_upgrade,
     upgrade_cost,
+    upgrade_bonus_for_level,
 )
-from ascii_climb.models import EQUIPMENT_SLOTS, GameSettings, Item, RunState, STAT_DESCRIPTIONS, STAT_KEYS, SaveData
+from ascii_climb.models import EQUIPMENT_SLOTS, GameSettings, Item, RARITIES, RunState, STAT_DESCRIPTIONS, STAT_KEYS, SaveData
 from ascii_climb.progression import (
     apply_enhancement,
     describe_enhancement,
@@ -107,10 +122,12 @@ from ascii_climb.save import (
     create_save_slot,
     delete_save_slot,
     list_save_slots,
+    load_profile,
     load_save_slot,
     load_settings,
     missing_mods_for_save,
     rename_save_slot,
+    save_profile,
     save_save_slot,
     save_settings,
 )
@@ -126,10 +143,12 @@ from ascii_climb.shops import (
     medkit_cost,
     scouting_cost,
     sell_item,
+    unequip_item,
 )
 from ascii_climb.sound import SoundManager
 from ascii_climb.visuals import enhancement_color, item_colors, readable_text_for_backgrounds
 from ascii_climb.stats import (
+    RARITY_RANK,
     add_play_time,
     record_combat_result,
     record_item_collected,
@@ -141,9 +160,30 @@ ROOT = Path(__file__).resolve().parent.parent
 SOUND_ROOT = ROOT / "assets" / "sounds"
 MUSIC_ROOT = ROOT / "assets" / "music"
 FONT_ROOT = ROOT / "assets" / "fonts"
+ICON_ROOT = ROOT / "assets" / "icons"
 LICENSE_PATH = ROOT / "LICENSE.md"
 PIXEL_BODY_FONT = "Tiny5"
 PIXEL_DISPLAY_FONT = "Pixelify Sans"
+INVENTORY_ICON_SHEET = ICON_ROOT / "vendor" / "opengameart-rpg-inventory-icons.png"
+KENNEY_ICON_ROOT = ICON_ROOT / "vendor" / "kenney-game-icons" / "PNG" / "White" / "2x"
+ITEM_ICON_ROOT = ICON_ROOT / "items"
+ITEM_ICON_PATHS = {
+    slot: {rarity: ITEM_ICON_ROOT / slot / f"{rarity}.png" for rarity in RARITIES}
+    for slot in EQUIPMENT_SLOTS
+}
+ITEM_ICON_FALLBACKS = {
+    slot: ITEM_ICON_ROOT / f"{slot}.png"
+    for slot in EQUIPMENT_SLOTS
+}
+ITEM_ICON_RECTS = {
+    "weapon": (0, 0, 32, 32),
+    "armor": (96, 0, 32, 32),
+    "charm": (64, 32, 32, 32),
+    "boots": (32, 32, 32, 32),
+    "ring": (64, 32, 32, 32),
+    "relic": (96, 32, 32, 32),
+    "fallback": (64, 32, 32, 32),
+}
 
 
 def _user_role():
@@ -171,6 +211,18 @@ def _multi_select():
     return QAbstractItemView.SelectionMode.MultiSelection if QT_MAJOR == 6 else QAbstractItemView.MultiSelection
 
 
+def _left_button():
+    return Qt.MouseButton.LeftButton if QT_MAJOR == 6 else Qt.LeftButton
+
+
+def _move_action():
+    return Qt.DropAction.MoveAction if QT_MAJOR == 6 else Qt.MoveAction
+
+
+def _control_modifier():
+    return Qt.KeyboardModifier.ControlModifier if QT_MAJOR == 6 else Qt.ControlModifier
+
+
 def _no_edits():
     return QAbstractItemView.EditTrigger.NoEditTriggers if QT_MAJOR == 6 else QAbstractItemView.NoEditTriggers
 
@@ -183,6 +235,14 @@ def _align_center():
     return Qt.AlignmentFlag.AlignCenter if QT_MAJOR == 6 else Qt.AlignCenter
 
 
+def _align_right():
+    return Qt.AlignmentFlag.AlignRight if QT_MAJOR == 6 else Qt.AlignRight
+
+
+def _tooltip_window_flag():
+    return Qt.WindowType.ToolTip if QT_MAJOR == 6 else Qt.ToolTip
+
+
 def _dialog_accepted():
     return QDialog.DialogCode.Accepted if QT_MAJOR == 6 else QDialog.Accepted
 
@@ -191,7 +251,31 @@ def _run_dialog(dialog: QDialog) -> int:
     return dialog.exec() if QT_MAJOR == 6 else dialog.exec_()
 
 
-def _monospace_font(point_size: int = 11) -> QFont:
+def _table_item(value: object) -> QTableWidgetItem:
+    text = str(value)
+    item = QTableWidgetItem(text)
+    item.setToolTip(text)
+    return item
+
+
+def _set_label_text(label: QLabel, text: str) -> None:
+    label.setText(text)
+    label.setToolTip(text)
+
+
+def _enable_table_hover_text(table: QTableWidget) -> None:
+    table.setMouseTracking(True)
+    table.viewport().setMouseTracking(True)
+
+    def show_item_text(item: QTableWidgetItem) -> None:
+        text = item.toolTip() or item.text()
+        if text:
+            QToolTip.showText(QCursor.pos(), text, table.viewport())
+
+    table.itemEntered.connect(show_item_text)
+
+
+def _monospace_font(point_size: int = 12) -> QFont:
     font = QFont(PIXEL_BODY_FONT)
     font.setStyleHint(QFont.StyleHint.Monospace if QT_MAJOR == 6 else QFont.Monospace)
     font.setPointSize(point_size)
@@ -305,6 +389,7 @@ class FightReplayDialog(QDialog):
         self.stance_combo = QComboBox()
         self.stance_combo.addItems(["steady", "guarded", "reckless"])
         self.stance_combo.setCurrentText(initial_stance)
+        self.stance_combo.currentTextChanged.connect(self.update_stance_description)
         self.turn_button = QPushButton("Attack Turn")
         self.auto_button = QPushButton("Auto")
         self.turn_button.clicked.connect(self.play_turn)
@@ -331,9 +416,13 @@ class FightReplayDialog(QDialog):
             self.auto_button.setEnabled(False)
             QTimer.singleShot(100, self.play_next)
         else:
-            self.action.setText(STANCE_DESCRIPTIONS.get(initial_stance, "Choose stance for this turn."))
+            self.update_stance_description(initial_stance)
             self.close_button.clicked.disconnect()
             self.close_button.clicked.connect(self.reject)
+
+    def update_stance_description(self, stance: str) -> None:
+        if self.result is None:
+            self.action.setText(STANCE_DESCRIPTIONS.get(stance, "Choose stance for this turn."))
 
     def play_next(self) -> None:
         if self.index >= len(self.events):
@@ -351,6 +440,8 @@ class FightReplayDialog(QDialog):
         message = str(event.get("message", ""))
         self.action.setText(message)
         self.log.append(message)
+        if event.get("item_broken"):
+            QMessageBox.information(self, "Item Broken", message, _message_button("Ok"))
         QTimer.singleShot(350, self.play_next)
 
     def play_turn(self) -> None:
@@ -432,6 +523,424 @@ class ItemGradientDelegate(QStyledItemDelegate):
         painter.restore()
 
 
+def item_tooltip(item: Item) -> str:
+    rows = [
+        item.label(),
+        f"Slot: {item.slot}",
+        f"Value: {item.value}",
+        item.stat_line(),
+    ]
+    if item.set_name:
+        rows.append(f"Set: {item.set_name}")
+    if item.drawback:
+        rows.append(f"Drawback: {item.drawback}")
+    return "\n".join(rows)
+
+
+def item_icon_pixmap(item: Item | None, size: int = 36) -> QPixmap:
+    pixmap = QPixmap(size, size)
+    pixmap.fill(QColor("#201b16"))
+    if item is None:
+        return pixmap
+    slot_icons = ITEM_ICON_PATHS.get(item.slot, {})
+    icon_path = slot_icons.get(item.rarity) or slot_icons.get("common") or ITEM_ICON_FALLBACKS.get(item.slot)
+    if icon_path and icon_path.exists():
+        icon = QPixmap(str(icon_path))
+        if not icon.isNull():
+            aspect_ratio = Qt.AspectRatioMode.KeepAspectRatio if QT_MAJOR == 6 else Qt.KeepAspectRatio
+            transform = Qt.TransformationMode.FastTransformation if QT_MAJOR == 6 else Qt.FastTransformation
+            return icon.scaled(size, size, aspect_ratio, transform)
+    if not INVENTORY_ICON_SHEET.exists():
+        return pixmap
+    sheet = QPixmap(str(INVENTORY_ICON_SHEET))
+    rect = ITEM_ICON_RECTS.get(item.slot, ITEM_ICON_RECTS["fallback"])
+    icon = sheet.copy(*rect)
+    return icon.scaled(size, size)
+
+
+class ItemHoverCard(QFrame):
+    def __init__(self, parent=None):
+        super().__init__(parent, _tooltip_window_flag())
+        self.setObjectName("itemHoverCard")
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating if QT_MAJOR == 6 else Qt.WA_ShowWithoutActivating)
+        self.setFrameShape(QFrame.Shape.StyledPanel if QT_MAJOR == 6 else QFrame.StyledPanel)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(12)
+        self.icon = QLabel()
+        self.icon.setFixedSize(64, 64)
+        self.icon.setAlignment(_align_center())
+        layout.addWidget(self.icon, 0, _align_center())
+        details = QVBoxLayout()
+        details.setSpacing(5)
+        self.name = QLabel()
+        self.name.setAlignment(_align_right())
+        self.name.setFont(_pixel_font(13, bold=True))
+        self.name.setWordWrap(True)
+        self.name.setMaximumWidth(280)
+        details.addWidget(self.name)
+        self.meta_row = QHBoxLayout()
+        self.meta_row.setSpacing(6)
+        self.rarity = QLabel()
+        self.quality = QLabel()
+        for chip in (self.rarity, self.quality):
+            chip.setAlignment(_align_center())
+            chip.setFont(_pixel_font(9, bold=True, family=PIXEL_BODY_FONT))
+            chip.setMinimumHeight(20)
+        self.meta_row.addStretch(1)
+        self.meta_row.addWidget(self.rarity)
+        self.meta_row.addWidget(self.quality)
+        details.addLayout(self.meta_row)
+        self.enhancements = QLabel()
+        self.enhancements.setAlignment(_align_right())
+        self.enhancements.setWordWrap(True)
+        self.enhancements.setFont(_pixel_font(11, family=PIXEL_BODY_FONT))
+        self.enhancements.setMaximumWidth(280)
+        details.addWidget(self.enhancements)
+        layout.addLayout(details, 1)
+        self.setMaximumWidth(380)
+        self.setStyleSheet(
+            """
+            QFrame#itemHoverCard {
+                background: #17130f;
+                border: 2px solid #c4952d;
+            }
+            QLabel {
+                background: transparent;
+                color: #f2f2f2;
+            }
+            """
+        )
+
+    def refresh(self, item: Item) -> None:
+        self.icon.setPixmap(item_icon_pixmap(item, 64))
+        self.name.setText(item.name)
+        rarity_color, quality_color = item_colors(item)
+        self._style_chip(self.rarity, item.rarity, rarity_color)
+        self._style_chip(self.quality, item.quality, quality_color)
+        rows = [item.stat_line()]
+        if item.set_name:
+            rows.append(f"Set: {item.set_name}")
+        rows.append(f"Slot: {item.slot}  |  iLvl {item.ilevel}  |  Value {sell_value(item)}")
+        self.enhancements.setText("\n".join(rows))
+        self.adjustSize()
+
+    def _style_chip(self, label: QLabel, text: str, color: str) -> None:
+        label.setText(text)
+        label.setStyleSheet(
+            "QLabel {"
+            f"background: {color};"
+            f"color: {readable_text_for_backgrounds(color)};"
+            "border: 1px solid #0d0b09;"
+            "padding: 2px 7px;"
+            "}"
+        )
+
+
+def slot_placeholder_pixmap(slot: str = "", size: int = 36) -> QPixmap:
+    pixmap = QPixmap(size, size)
+    pixmap.fill(QColor("#201b16"))
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing if QT_MAJOR == 6 else QPainter.Antialiasing, False)
+    painter.setPen(QColor("#050505"))
+    painter.setBrush(QColor("#050505"))
+    inset = max(4, size // 8)
+    if slot == "weapon":
+        painter.drawRect(size // 2 - 2, inset, 4, size - inset * 2)
+        painter.drawRect(size // 3, size - inset * 2, size // 3, 4)
+    elif slot == "armor":
+        painter.drawRect(size // 4, inset, size // 2, size - inset * 2)
+        painter.drawRect(size // 5, inset + 4, size // 5, size // 4)
+        painter.drawRect(size * 3 // 5, inset + 4, size // 5, size // 4)
+    elif slot == "boots":
+        painter.drawRect(inset, size // 2, size // 3, size // 3)
+        painter.drawRect(size // 2, size // 2, size // 3, size // 3)
+    elif slot == "ring":
+        painter.drawEllipse(inset, inset, size - inset * 2, size - inset * 2)
+        painter.setBrush(QColor("#201b16"))
+        painter.drawEllipse(inset * 2, inset * 2, size - inset * 4, size - inset * 4)
+    elif slot == "charm":
+        painter.drawLine(size // 2, inset, size - inset, size // 2)
+        painter.drawLine(size - inset, size // 2, size // 2, size - inset)
+        painter.drawLine(size // 2, size - inset, inset, size // 2)
+        painter.drawLine(inset, size // 2, size // 2, inset)
+        painter.drawRect(size // 2 - 2, size // 2 - 2, 4, 4)
+    elif slot == "relic":
+        painter.drawEllipse(inset, inset, size - inset * 2, size - inset * 2)
+        painter.drawRect(size // 2 - 2, inset * 2, 4, size - inset * 4)
+    else:
+        painter.drawRect(inset, inset, size - inset * 2, size - inset * 2)
+    painter.end()
+    return pixmap
+
+
+class ItemSlotWidget(QFrame):
+    def __init__(self, owner, area: str, index: int = -1, equipment_slot: str = ""):
+        super().__init__(owner)
+        self.owner = owner
+        self.area = area
+        self.index = index
+        self.equipment_slot = equipment_slot
+        self.item_id = ""
+        self.current_item: Item | None = None
+        self.selected = False
+        self.sell_visible = False
+        self.drag_target_state = ""
+        self.drag_start = None
+        self.drag_started = False
+        self.setAcceptDrops(True)
+        self.setMinimumSize(112, 116)
+        self.setMaximumSize(142, 132)
+        self.setFrameShape(QFrame.Shape.StyledPanel if QT_MAJOR == 6 else QFrame.StyledPanel)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(7, 7, 7, 7)
+        layout.setSpacing(3)
+        self.icon = QLabel()
+        self.icon.setAlignment(_align_center())
+        self.icon.setFixedSize(48, 48)
+        self.sell_button = QPushButton(self.owner.t("game.sell"))
+        self.sell_button.setFixedHeight(24)
+        self.sell_button.setVisible(False)
+        self.sell_button.clicked.connect(lambda checked=False: self.owner.sell_slot_item(self))
+        self.take_off_button = QPushButton("Take off")
+        self.take_off_button.setFixedHeight(24)
+        self.take_off_button.setVisible(False)
+        self.take_off_button.clicked.connect(lambda checked=False: self.owner.take_off_slot_item(self))
+        self.label = QLabel("")
+        self.label.setAlignment(_align_center())
+        self.label.setWordWrap(True)
+        self.label.setFont(_pixel_font(11, family=PIXEL_BODY_FONT))
+        layout.addWidget(self.icon, alignment=_align_center())
+        layout.addWidget(self.sell_button)
+        layout.addWidget(self.take_off_button)
+        layout.addWidget(self.label)
+        self.icon.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents if QT_MAJOR == 6 else Qt.WA_TransparentForMouseEvents)
+        self.label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents if QT_MAJOR == 6 else Qt.WA_TransparentForMouseEvents)
+        self.refresh(None, False)
+
+    def refresh(self, item: Item | None, selected: bool = False, sell_visible: bool = False) -> None:
+        self.current_item = item
+        self.selected = selected
+        self.sell_visible = bool(item and sell_visible)
+        self.drag_target_state = ""
+        self.item_id = item.id if item else ""
+        if item:
+            self.icon.setPixmap(item_icon_pixmap(item, 48))
+            self.label.setText(item.name)
+            self.setToolTip("")
+        else:
+            label = self.equipment_slot if self.equipment_slot else f"Slot {self.index + 1}"
+            self.icon.setPixmap(slot_placeholder_pixmap(self.equipment_slot, 48))
+            self.label.setText(label)
+            self.setToolTip("")
+        self.sell_button.setVisible(self.sell_visible)
+        self.take_off_button.setVisible(self.sell_visible and self.area == "equipment")
+        self._apply_style()
+
+    def _apply_style(self) -> None:
+        if self.current_item:
+            top, bottom = item_colors(self.current_item)
+            fg = readable_text_for_backgrounds(top, bottom)
+            border = "#ffe08a" if self.selected else top
+            if self.drag_target_state == "valid":
+                border = "#7dff9a"
+            elif self.drag_target_state == "invalid":
+                border = "#5b4a3d"
+            opacity_overlay = "rgba(0,0,0,0.42)" if self.drag_target_state == "invalid" else "transparent"
+            background = f"qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 {top},stop:1 {bottom})"
+            label_color = fg
+        else:
+            border = "#ffe08a" if self.selected else "#4a3a2d"
+            if self.drag_target_state == "valid":
+                border = "#7dff9a"
+            elif self.drag_target_state == "invalid":
+                border = "#3b3127"
+            opacity_overlay = "transparent"
+            background = "#17130f"
+            label_color = "#a99b8a"
+        self.setStyleSheet(
+            "QFrame {"
+            f"background: {background};"
+            f"border: 2px solid {border};"
+            "}"
+            "QFrame:hover { border-color: #ffd166; }"
+            f"QLabel {{ background: {opacity_overlay}; color: {label_color}; }}"
+            "QPushButton {"
+            "background: #b32626;"
+            "border: 1px solid #ff7474;"
+            "color: #ffffff;"
+            "padding: 1px 5px;"
+            "font-size: 12px;"
+            "text-align: center;"
+            "}"
+            "QPushButton:hover, QPushButton:focus {"
+            "background: #d63a3a;"
+            "color: #ffffff;"
+            "}"
+        )
+
+    def set_drag_target_state(self, state: str) -> None:
+        self.drag_target_state = state
+        self._apply_style()
+
+    def drag_distance_reached(self, position: QPoint) -> bool:
+        if self.drag_start is None:
+            return False
+        return (position - self.drag_start).manhattanLength() >= QApplication.startDragDistance()
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == _left_button():
+            self.drag_start = event.pos()
+            self.drag_started = False
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if not (event.buttons() & _left_button()):
+            return
+        if not self.item_id:
+            return
+        if not self.drag_distance_reached(event.pos()):
+            return
+        self.drag_started = True
+        self.owner.begin_slot_drag(self)
+        mime = QMimeData()
+        payload = f"{self.area}|{self.index}|{self.item_id}|{self.equipment_slot}"
+        mime.setText(payload)
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+        drag.setPixmap(self.icon.pixmap() or QPixmap())
+        drag.exec(_move_action())
+        self.owner.end_slot_drag()
+        self.drag_start = None
+        self.drag_row = -1
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == _left_button():
+            if not self.drag_started and self.drag_start is not None and not self.drag_distance_reached(event.pos()):
+                self.owner.slot_clicked(self)
+            self.drag_start = None
+            self.drag_started = False
+        super().mouseReleaseEvent(event)
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        if event.button() == _left_button() and self.area == "equipment" and self.current_item:
+            self.owner.take_off_slot_item(self)
+        else:
+            super().mouseDoubleClickEvent(event)
+
+    def enterEvent(self, event) -> None:
+        if self.current_item:
+            self.owner.show_item_hover(self)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self.owner.hide_item_hover(self)
+        super().leaveEvent(event)
+
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasText():
+            event.acceptProposedAction()
+
+    def dragMoveEvent(self, event) -> None:
+        if event.mimeData().hasText():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:
+        if self.owner.handle_slot_drop(event.mimeData().text(), self):
+            event.acceptProposedAction()
+
+
+class InventoryTableWidget(QTableWidget):
+    COLUMNS = ["Name", "Set", "Rarity", "Quality", "iLvl", "Selling Cost", "Stat 1", "Stat 2", "Stat 3", "Stat 4", "Stat 5", "Stat 6"]
+
+    def __init__(self, owner, area: str):
+        super().__init__(0, len(self.COLUMNS), owner)
+        self.owner = owner
+        self.area = area
+        self.drag_start = None
+        self.drag_started = False
+        self.drag_row = -1
+        self.setHorizontalHeaderLabels(self.COLUMNS)
+        self.horizontalHeader().setSectionResizeMode(_stretch_mode())
+        self.verticalHeader().setVisible(False)
+        self.setSelectionBehavior(_select_rows())
+        self.setSelectionMode(_single_select())
+        self.setEditTriggers(_no_edits())
+        self.setAcceptDrops(True)
+        self.setDragEnabled(True)
+        self.setMouseTracking(True)
+        self.viewport().setMouseTracking(True)
+
+    def item_id_for_row(self, row: int) -> str:
+        if row < 0:
+            return ""
+        cell = self.item(row, 0)
+        return str(cell.data(_user_role()) or "") if cell else ""
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == _left_button():
+            self.drag_start = event.pos()
+            self.drag_started = False
+            self.drag_row = self.indexAt(event.pos()).row()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        row = self.indexAt(event.pos()).row()
+        item_id = self.item_id_for_row(row)
+        if item_id and not (event.buttons() & _left_button()):
+            item = self.owner.item_by_id(item_id)
+            if item:
+                self.owner.show_item_hover_for_item(item, self.viewport().mapToGlobal(event.pos()))
+        if not (event.buttons() & _left_button()) or self.drag_start is None:
+            if QT_MAJOR == 6:
+                pos = event.position().toPoint()
+            else:
+                pos = event.pos()
+            row = self.indexAt(pos).row()
+            super().mouseMoveEvent(event)
+            return
+        if (event.pos() - self.drag_start).manhattanLength() < QApplication.startDragDistance():
+            super().mouseMoveEvent(event)
+            return
+        row = self.drag_row
+        item_id = self.item_id_for_row(row)
+        if not item_id:
+            return
+        self.drag_started = True
+        self.owner.begin_inventory_table_drag(self, row)
+        mime = QMimeData()
+        mime.setText(f"{self.area}|{row}|{item_id}|")
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+        drag.exec(_move_action())
+        self.owner.end_slot_drag()
+        self.drag_start = None
+
+    def leaveEvent(self, event) -> None:
+        self.owner.hide_item_hover()
+        super().leaveEvent(event)
+
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasText():
+            event.acceptProposedAction()
+
+    def dragMoveEvent(self, event) -> None:
+        if event.mimeData().hasText():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:
+        """Handle dropping items into the inventory table."""
+        if QT_MAJOR == 6:
+            pos = event.position().toPoint()      # QPointF -> QPoint
+        else:
+            pos = event.pos()
+
+        index = self.indexAt(pos)
+        row = index.row() if index.isValid() else self.rowCount()
+
+        if self.owner.handle_inventory_table_drop(event.mimeData().text(), row):
+            event.acceptProposedAction()
+
 class AspyriaWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -439,23 +948,35 @@ class AspyriaWindow(QMainWindow):
         self.settings = load_settings()
         reload_content(self.settings.enabled_mods, self.settings.mod_choices)
         self.t = Translator(self.settings.language, self.settings.enabled_mods).t
+        self.profile_meta = load_profile()
         self.data: SaveData | None = None
         self.current_slot_id = ""
         self.current_slot_name = ""
         self.pending_loot: Item | None = None
         self.last_scout_lines: list[str] = []
+        self.selected_inventory_ids: set[str] = set()
+        self.selected_equipment_slot = ""
+        self.active_sell_key: tuple[str, str, str] | None = None
+        self.refreshing_inventory_tables = False
+        self.dragged_item_slot = ""
+        self.item_hover: ItemHoverCard | None = None
         self.session_started_at = time.time()
         self.setWindowTitle(self.t("app.title"))
         self.logo_path = self.find_logo_path()
         self.menu_logo_width = 640
         if self.logo_path:
             self.setWindowIcon(QIcon(str(self.logo_path)))
-        self.sound = SoundManager(SOUND_ROOT, self.settings.sound_volume, MUSIC_ROOT)
+        self.sound = SoundManager(
+            SOUND_ROOT,
+            self.settings.sfx_volume,
+            MUSIC_ROOT,
+            self.settings.music_volume,
+        )
         self._build_ui()
         self.apply_theme()
         self.apply_resolution()
         self.refresh_all()
-        self.sound.set_music("menu")
+        self.stack.setCurrentWidget(self.disclaimer_page)
 
     def _register_fonts(self) -> None:
         for path in (
@@ -468,7 +989,7 @@ class AspyriaWindow(QMainWindow):
                 QFontDatabase.addApplicationFont(str(path))
 
     def apply_theme(self) -> None:
-        self.setFont(_pixel_font(12, family=PIXEL_BODY_FONT))
+        self.setFont(_pixel_font(14, family=PIXEL_BODY_FONT))
         self.setStyleSheet(
             """
             QWidget {
@@ -484,7 +1005,7 @@ class AspyriaWindow(QMainWindow):
                 color: #d8d0c2;
                 padding: 8px 10px;
                 font-family: 'Pixelify Sans';
-                font-size: 19px;
+                font-size: 20px;
                 font-weight: 700;
                 text-align: left;
             }
@@ -513,12 +1034,22 @@ class AspyriaWindow(QMainWindow):
             QProgressBar::chunk {
                 background-color: #c4952d;
             }
+            QTabBar::tab {
+                min-width: 96px;
+                min-height: 30px;
+                padding: 8px 16px;
+                font-family: 'Pixelify Sans';
+                font-size: 20px;
+                font-weight: 700;
+            }
             """
         )
 
     def _build_ui(self) -> None:
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
+        self.disclaimer_page = self._build_disclaimer_page()
+        self.brand_page = self._build_brand_page()
         self.menu_page = self._build_main_menu()
         self.game_page = self._build_game_page()
         self.slots_page = self._build_slots_page()
@@ -528,6 +1059,8 @@ class AspyriaWindow(QMainWindow):
         self.enhancements_page = self._build_enhancements_page()
         self.credits_page = self._build_credits_page()
         for page in (
+            self.disclaimer_page,
+            self.brand_page,
             self.menu_page,
             self.game_page,
             self.slots_page,
@@ -538,6 +1071,41 @@ class AspyriaWindow(QMainWindow):
             self.credits_page,
         ):
             self.stack.addWidget(page)
+
+    def _build_disclaimer_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.addStretch(1)
+        text = QLabel(
+            "This game is currently under development. Preservation of features and format of saves between versions is not guaranteed."
+        )
+        text.setWordWrap(True)
+        text.setAlignment(_align_center())
+        text.setFont(_pixel_font(18, bold=True))
+        layout.addWidget(text)
+        button = QPushButton("OK")
+        button.setMinimumHeight(52)
+        button.clicked.connect(self.show_brand_splash)
+        layout.addWidget(button, alignment=_align_center())
+        layout.addStretch(1)
+        return page
+
+    def _build_brand_page(self) -> QWidget:
+        page = QWidget()
+        page.setStyleSheet("QWidget { background: #000000; color: #ffffff; }")
+        layout = QVBoxLayout(page)
+        layout.addStretch(1)
+        brand = QLabel("DigitalGarbage")
+        brand.setAlignment(_align_center())
+        brand.setFont(_pixel_font(28, bold=True))
+        layout.addWidget(brand)
+        layout.addStretch(1)
+        return page
+
+    def show_brand_splash(self) -> None:
+        self.sound.play("click")
+        self.stack.setCurrentWidget(self.brand_page)
+        QTimer.singleShot(1200, self.show_menu)
 
     def _build_main_menu(self) -> QWidget:
         page = QWidget()
@@ -674,6 +1242,7 @@ class AspyriaWindow(QMainWindow):
         self.stats_table.horizontalHeader().setSectionResizeMode(_stretch_mode())
         self.stats_table.verticalHeader().setVisible(False)
         self.stats_table.setEditTriggers(_no_edits())
+        _enable_table_hover_text(self.stats_table)
         layout.addWidget(self.stats_table, 4, 0)
         self.log_view = QTextEdit()
         self.log_view.setReadOnly(True)
@@ -686,23 +1255,28 @@ class AspyriaWindow(QMainWindow):
     def _build_inventory_tab(self) -> None:
         tab = QWidget()
         layout = QGridLayout(tab)
-        self.equipment_table = QTableWidget(0, 3)
-        self.equipment_table.setHorizontalHeaderLabels(["Slot", "Item", "Stats"])
-        self.equipment_table.horizontalHeader().setSectionResizeMode(_stretch_mode())
-        self.equipment_table.verticalHeader().setVisible(False)
-        self.equipment_table.setEditTriggers(_no_edits())
-        layout.addWidget(self.equipment_table, 0, 0, 1, 3)
-        self.inventory_table = self._make_inventory_table()
-        layout.addWidget(self.inventory_table, 1, 0, 1, 3)
-        self.equip_button = QPushButton(self.t("game.equip"))
-        self.sell_button = QPushButton(self.t("game.sell"))
-        self.drop_button = QPushButton(self.t("game.drop"))
-        self.equip_button.clicked.connect(self._button_action(self.equip_selected))
-        self.sell_button.clicked.connect(self._button_action(self.sell_selected))
+        equipment_box = QGroupBox("Equipment")
+        equipment_layout = QGridLayout(equipment_box)
+        self.equipment_slots = {}
+        for index, slot in enumerate(EQUIPMENT_SLOTS):
+            widget = ItemSlotWidget(self, "equipment", index, slot)
+            self.equipment_slots[slot] = widget
+            equipment_layout.addWidget(widget, index // 3, index % 3)
+        layout.addWidget(equipment_box, 0, 0, 1, 4)
+        inventory_box, self.inventory_table = self._make_inventory_table_box("inventory")
+        layout.addWidget(inventory_box, 1, 0, 1, 4)
+        self.drop_button = QPushButton()
+        self.drop_button.setToolTip(self.t("game.drop"))
+        trash_icon = KENNEY_ICON_ROOT / "trashcan.png"
+        if trash_icon.exists():
+            self.drop_button.setIcon(QIcon(str(trash_icon)))
+            self.drop_button.setIconSize(QSize(34, 34))
+        else:
+            self.drop_button.setText("X")
+        self.drop_button.setMinimumHeight(46)
+        self.drop_button.setStyleSheet("QPushButton { color: #ff4d4d; font-size: 26px; text-align: center; }")
         self.drop_button.clicked.connect(self._button_action(self.drop_selected))
-        layout.addWidget(self.equip_button, 2, 0)
-        layout.addWidget(self.sell_button, 2, 1)
-        layout.addWidget(self.drop_button, 2, 2)
+        layout.addWidget(self.drop_button, 2, 0, 1, 4, _align_center())
         self.tabs.addTab(tab, self.t("game.inventory"))
 
     def _build_shop_tab(self) -> None:
@@ -711,46 +1285,54 @@ class AspyriaWindow(QMainWindow):
         self.shop_status = QLabel()
         self.shop_status.setWordWrap(True)
         layout.addWidget(self.shop_status, 0, 0, 1, 5)
-        buttons = [
-            (self.t("game.buy_random_gear"), self.buy_random_gear),
-            (self.t("game.sell"), self.sell_selected),
-            (self.t("game.improve"), self.repair_selected),
-            (self.t("game.fuse"), self.fuse_selected),
+        button_specs = [
+            ("buy_random_button", self.t("game.buy_random_gear"), self.buy_random_gear),
+            ("shop_sell_button", self.t("game.sell"), self.sell_selected),
+            ("fuse_button", self.t("game.fuse"), self.fuse_selected),
         ]
-        for index, (label, handler) in enumerate(buttons):
+        for index, (attr, label, handler) in enumerate(button_specs):
             button = QPushButton(label)
+            setattr(self, attr, button)
             button.clicked.connect(handler)
             layout.addWidget(button, 1, index)
         medkit_row = QHBoxLayout()
+        self.medkit_buttons = {}
         for size, label in (("small", "Small Medkit"), ("medium", "Medium Medkit"), ("large", "Large Medkit")):
             button = QPushButton(label)
             button.clicked.connect(lambda checked=False, selected=size: self.buy_medkit(selected))
+            self.medkit_buttons[size] = button
             medkit_row.addWidget(button)
         layout.addLayout(medkit_row, 2, 0, 1, 5)
-        self.shop_inventory_table = self._make_inventory_table()
-        layout.addWidget(self.shop_inventory_table, 3, 0, 1, 5)
+        shop_inventory_box, self.shop_inventory_table = self._make_inventory_table_box("shop_inventory")
+        layout.addWidget(shop_inventory_box, 3, 0, 1, 5)
         self.tabs.addTab(tab, self.t("game.shop"))
 
-    def _make_inventory_table(self) -> QTableWidget:
-        table = QTableWidget(0, 7)
-        table.setHorizontalHeaderLabels(
-            [
-                self.t("table.item"),
-                self.t("table.slot"),
-                self.t("table.rarity"),
-                self.t("table.quality"),
-                "iLvl",
-                self.t("table.value"),
-                self.t("table.stats"),
-            ]
-        )
-        table.horizontalHeader().setSectionResizeMode(_stretch_mode())
-        table.verticalHeader().setVisible(False)
-        table.setSelectionBehavior(_select_rows())
-        table.setSelectionMode(_multi_select())
-        table.setEditTriggers(_no_edits())
-        table.setItemDelegateForColumn(0, ItemGradientDelegate(table))
-        return table
+    def _make_inventory_table_box(self, area: str = "inventory") -> tuple[QGroupBox, InventoryTableWidget]:
+        box = QGroupBox("Inventory")
+        layout = QVBoxLayout(box)
+        action_row = QHBoxLayout()
+        improve_button = QPushButton(self.t("game.improve"))
+        sell_button = QPushButton(self.t("game.sell"))
+        improve_button.clicked.connect(self._button_action(self.repair_selected))
+        sell_button.clicked.connect(self._button_action(self.sell_selected))
+        action_row.addStretch(1)
+        action_row.addWidget(improve_button)
+        action_row.addWidget(sell_button)
+        layout.addLayout(action_row)
+        table = InventoryTableWidget(self, area)
+        table.setMinimumHeight(300)
+        table.itemSelectionChanged.connect(lambda selected_area=area: self.inventory_table_selection_changed(selected_area))
+        table.itemDoubleClicked.connect(lambda item, selected_area=area: self.inventory_table_double_clicked(selected_area))
+        layout.addWidget(table)
+        if area == "inventory":
+            self.inventory_action_bar = action_row
+            self.inventory_improve_button = improve_button
+            self.inventory_sell_button = sell_button
+        else:
+            self.shop_inventory_action_bar = action_row
+            self.shop_inventory_improve_button = improve_button
+            self.shop_inventory_sell_button = sell_button
+        return box, table
 
     def _build_slots_page(self) -> QWidget:
         page, layout = self._build_page_header(self.t("slot.title"), self.show_menu)
@@ -769,6 +1351,7 @@ class AspyriaWindow(QMainWindow):
         self.slots_table.setSelectionBehavior(_select_rows())
         self.slots_table.setSelectionMode(_single_select())
         self.slots_table.setEditTriggers(_no_edits())
+        _enable_table_hover_text(self.slots_table)
         layout.addWidget(self.slots_table)
         row = QHBoxLayout()
         for label, handler in (
@@ -806,6 +1389,7 @@ class AspyriaWindow(QMainWindow):
         self.codex_table.horizontalHeader().setSectionResizeMode(_stretch_mode())
         self.codex_table.verticalHeader().setVisible(False)
         self.codex_table.setEditTriggers(_no_edits())
+        _enable_table_hover_text(self.codex_table)
         layout.addWidget(self.codex_table)
         return page
 
@@ -818,6 +1402,7 @@ class AspyriaWindow(QMainWindow):
         self.mods_table.setSelectionBehavior(_select_rows())
         self.mods_table.setSelectionMode(_single_select())
         self.mods_table.setEditTriggers(_no_edits())
+        _enable_table_hover_text(self.mods_table)
         layout.addWidget(self.mods_table)
         row = QHBoxLayout()
         self.toggle_mod_button = QPushButton(self.t("mods.enable"))
@@ -835,6 +1420,7 @@ class AspyriaWindow(QMainWindow):
         self.conflict_table.setSelectionBehavior(_select_rows())
         self.conflict_table.setSelectionMode(_single_select())
         self.conflict_table.setEditTriggers(_no_edits())
+        _enable_table_hover_text(self.conflict_table)
         layout.addWidget(self.conflict_table)
         conflict_buttons = QHBoxLayout()
         for label, action in (
@@ -856,9 +1442,12 @@ class AspyriaWindow(QMainWindow):
         self.language_combo = QComboBox()
         self.language_combo.addItems(["en", "ru"])
         self.language_combo.setCurrentText(self.settings.language)
-        self.volume_slider = QSlider(_horizontal())
-        self.volume_slider.setRange(0, 100)
-        self.volume_slider.setValue(self.settings.sound_volume)
+        self.sfx_volume_slider = QSlider(_horizontal())
+        self.sfx_volume_slider.setRange(0, 100)
+        self.sfx_volume_slider.setValue(self.settings.sfx_volume)
+        self.music_volume_slider = QSlider(_horizontal())
+        self.music_volume_slider.setRange(0, 100)
+        self.music_volume_slider.setValue(self.settings.music_volume)
         self.resolution_combo = QComboBox()
         self.resolution_combo.addItems(RESOLUTIONS)
         self.resolution_combo.setCurrentText("Fullscreen" if self.settings.fullscreen else self.settings.resolution)
@@ -866,11 +1455,13 @@ class AspyriaWindow(QMainWindow):
         self.fullscreen_check.setChecked(self.settings.fullscreen)
         form.addWidget(QLabel(self.t("settings.language")), 0, 0)
         form.addWidget(self.language_combo, 0, 1)
-        form.addWidget(QLabel(self.t("settings.volume")), 1, 0)
-        form.addWidget(self.volume_slider, 1, 1)
-        form.addWidget(QLabel(self.t("settings.resolution")), 2, 0)
-        form.addWidget(self.resolution_combo, 2, 1)
-        form.addWidget(self.fullscreen_check, 3, 1)
+        form.addWidget(QLabel(self.t("settings.sfx_volume")), 1, 0)
+        form.addWidget(self.sfx_volume_slider, 1, 1)
+        form.addWidget(QLabel(self.t("settings.music_volume")), 2, 0)
+        form.addWidget(self.music_volume_slider, 2, 1)
+        form.addWidget(QLabel(self.t("settings.resolution")), 3, 0)
+        form.addWidget(self.resolution_combo, 3, 1)
+        form.addWidget(self.fullscreen_check, 4, 1)
         layout.addLayout(form)
         apply_button = QPushButton(self.t("settings.apply"))
         apply_button.clicked.connect(self._button_action(self.apply_settings))
@@ -891,6 +1482,7 @@ class AspyriaWindow(QMainWindow):
         self.upgrade_table.setSelectionBehavior(_select_rows())
         self.upgrade_table.setSelectionMode(_single_select())
         self.upgrade_table.setEditTriggers(_no_edits())
+        self.upgrade_table.itemDoubleClicked.connect(lambda item: self.buy_selected_upgrade())
         layout.addWidget(self.upgrade_table)
         row = QHBoxLayout()
         buy = QPushButton(self.t("game.buy_upgrade"))
@@ -991,7 +1583,9 @@ class AspyriaWindow(QMainWindow):
 
     def show_enhancements(self) -> None:
         if self.data is None:
-            self.continue_last_save(load_only=True)
+            self.data = SaveData(meta=self.profile_meta, enabled_mods=list(self.settings.enabled_mods), required_mods=list(self.settings.enabled_mods))
+        else:
+            self.data.meta = self.profile_meta
         self.refresh_enhancements()
         self.stack.setCurrentWidget(self.enhancements_page)
         self.sound.set_music("menu")
@@ -1014,12 +1608,15 @@ class AspyriaWindow(QMainWindow):
             save_settings(self.settings)
         if self.data is None:
             self.data = load_save_slot(self.current_slot_id)
+        self.data.meta = self.profile_meta
         self.start_new_run()
         self.show_game()
 
     def start_new_run(self) -> None:
         if self.data is None:
-            self.data = SaveData()
+            self.data = SaveData(meta=self.profile_meta)
+        else:
+            self.data.meta = self.profile_meta
         seed = int(time.time())
         self.data.enabled_mods = list(self.settings.enabled_mods)
         self.data.required_mods = list(self.settings.enabled_mods)
@@ -1063,6 +1660,7 @@ class AspyriaWindow(QMainWindow):
         if missing and not self.handle_missing_mods(missing):
             return
         self.data = data
+        self.profile_meta = data.meta
         self.last_scout_lines = []
         if self.data.run and self.data.run.location_index >= len(LOCATIONS):
             self.warn("The saved location is unavailable with the current mod setup. Moving the run back to Rust Alley.")
@@ -1096,6 +1694,7 @@ class AspyriaWindow(QMainWindow):
     def save_current_slot(self) -> None:
         if self.data is None:
             return
+        self.data.meta = self.profile_meta
         if not self.current_slot_id:
             self.current_slot_id = create_save_slot("New Save", self.data)
             self.current_slot_name = "New Save"
@@ -1104,11 +1703,19 @@ class AspyriaWindow(QMainWindow):
         self.settings.last_slot = self.current_slot_id
         save_settings(self.settings)
 
+    def save_profile_state(self) -> None:
+        save_profile(self.profile_meta)
+        if self.data is not None:
+            self.data.meta = self.profile_meta
+
     def create_slot_dialog(self) -> None:
         name, ok = QInputDialog.getText(self, self.t("slot.create"), self.t("slot.name"))
         if not ok:
             return
-        slot_id = create_save_slot(name or "New Save", SaveData(enabled_mods=list(self.settings.enabled_mods), required_mods=list(self.settings.enabled_mods)))
+        slot_id = create_save_slot(
+            name or "New Save",
+            SaveData(meta=self.profile_meta, enabled_mods=list(self.settings.enabled_mods), required_mods=list(self.settings.enabled_mods)),
+        )
         self.load_slot(slot_id)
         self.refresh_slots()
 
@@ -1135,6 +1742,16 @@ class AspyriaWindow(QMainWindow):
             self.current_slot_id = ""
             self.current_slot_name = ""
         self.refresh_slots()
+
+    def delete_failed_current_slot(self) -> None:
+        if self.current_slot_id:
+            delete_save_slot(self.current_slot_id)
+        self.current_slot_id = ""
+        self.current_slot_name = ""
+        self.settings.last_slot = ""
+        save_settings(self.settings)
+        self.save_profile_state()
+        self.data = None
 
     def fight(self) -> None:
         run = self.data.run if self.data else None
@@ -1171,6 +1788,19 @@ class AspyriaWindow(QMainWindow):
         if result.consolation_item:
             self.pending_loot = result.consolation_item
             self.handle_loot(result.consolation_item)
+        if self.data.run and self.data.run.pending_defeat_penalty:
+            self.handle_pending_defeat_penalty()
+        if self.data is None or self.data.run is None:
+            return
+        if result.run_failure and self.data.run and not self.data.run.active:
+            summary = self.run_loss_summary(self.data.run)
+            self.show_run_loss_screen(summary)
+            self.data.run = None
+            self.pending_loot = None
+            self.delete_failed_current_slot()
+            self.refresh_all()
+            self.show_menu()
+            return
         if self.data.run and not self.data.run.active:
             self.data.run = None
             self.pending_loot = None
@@ -1197,6 +1827,49 @@ class AspyriaWindow(QMainWindow):
         self.save_current_slot()
         self.refresh_all()
 
+    def handle_pending_defeat_penalty(self) -> None:
+        run = self.data.run if self.data else None
+        if run is None or not run.pending_defeat_penalty:
+            return
+        pending = run.pending_defeat_penalty
+        options = pending.get("options", [])
+        stats = pending.get("stats", [])
+        choices = []
+        if DEFEAT_PRICE_ITEM in options:
+            all_items = run.inventory + run.equipped_items()
+            strongest = max(all_items, key=lambda item: item.value).name if all_items else "no gear"
+            choices.append((f"Give away most powerful item ({strongest})", DEFEAT_PRICE_ITEM))
+        if DEFEAT_PRICE_COINS in options:
+            choices.append((f"Give away all coins ({run.coins})", DEFEAT_PRICE_COINS))
+        if DEFEAT_PRICE_STATS in options:
+            stat_text = ", ".join(stats) if stats else "no available stats"
+            choices.append((f"Disable stat increases: {stat_text}", DEFEAT_PRICE_STATS))
+        if not choices:
+            logs: list[str] = []
+            resolve_defeat_penalty(self.profile_meta, run, "", logs)
+            self.log("\n".join(logs))
+            return
+        dialog = ChoiceDialog(
+            "King's healers managed to save you, but everything comes with the price. What do you choose?",
+            ["Choose one price. A chosen price cannot be chosen again in this run."],
+            choices,
+            self,
+        )
+        if _run_dialog(dialog) != _dialog_accepted() or dialog.choice is None:
+            dialog.choice = choices[0][1]
+        logs = []
+        resolve_defeat_penalty(self.profile_meta, run, str(dialog.choice), logs)
+        self.data.meta = self.profile_meta
+        self.log("\n".join(logs))
+        if not run.active:
+            summary = self.run_loss_summary(run)
+            self.show_run_loss_screen(summary)
+            self.data.run = None
+            self.pending_loot = None
+            self.delete_failed_current_slot()
+            self.refresh_all()
+            self.show_menu()
+
     def show_fight_replay(self, run: RunState):
         dialog = FightReplayDialog(
             None,
@@ -1216,6 +1889,27 @@ class AspyriaWindow(QMainWindow):
         self.result_panel.setText("\n".join(summary))
         if result.enemy.boss or (not result.victory and not result.fled):
             QMessageBox.information(self, "Battle Result", "\n".join(summary), _message_button("Ok"))
+
+    def run_loss_summary(self, run: RunState) -> list[str]:
+        location = LOCATIONS[run.location_index]
+        all_items = run.inventory + run.equipped_items()
+        rarest = max(
+            all_items,
+            key=lambda item: (RARITY_RANK.get(item.rarity, 0), item.value),
+            default=None,
+        )
+        duration = time.time() - (run.started_at or time.time())
+        return [
+            "The run is lost.",
+            f"Time spent: {format_duration(duration)}",
+            f"Progress: {location.name}, fight {run.fights_in_location}/{location.fights_to_boss}",
+            f"Rarest item: {rarest.label() if rarest else 'none'}",
+            f"Enemies killed: {run.enemies_killed}",
+            f"Ended at: loop {run.loop_tier}, stage {run.location_index + 1} ({location.name})",
+        ]
+
+    def show_run_loss_screen(self, rows: list[str]) -> None:
+        QMessageBox.information(self, "Run Lost", "\n".join(rows), _message_button("Ok"))
 
     def normalize_current_hp(self) -> None:
         run = self.data.run if self.data else None
@@ -1293,6 +1987,17 @@ class AspyriaWindow(QMainWindow):
             if result.loot:
                 self.pending_loot = result.loot
                 self.handle_loot(result.loot)
+            if run.pending_defeat_penalty:
+                self.handle_pending_defeat_penalty()
+                return
+            if not run.active:
+                summary = self.run_loss_summary(run)
+                self.show_run_loss_screen(summary)
+                self.data.run = None
+                self.pending_loot = None
+                self.delete_failed_current_slot()
+                self.refresh_all()
+                self.show_menu()
 
     def handle_loot(self, loot: Item) -> None:
         run = self.data.run if self.data else None
@@ -1387,6 +2092,12 @@ class AspyriaWindow(QMainWindow):
         )
         self.log(message)
         self.sound.play("loot" if ok else "error")
+        QMessageBox.information(
+            self,
+            "Caravan Delivery",
+            message,
+            _message_button("Ok"),
+        )
         if ok:
             for item in run.inventory:
                 if item.id not in before:
@@ -1502,7 +2213,8 @@ class AspyriaWindow(QMainWindow):
             "You had retired. Maybe Aspyria believed in wrong hero...",
             _message_button("Ok"),
         )
-        self.data.meta.gold += gold
+        self.profile_meta.gold += gold
+        self.data.meta = self.profile_meta
         self.data.run = None
         self.pending_loot = None
         self.log(f"Retired run. The run pays out {gold} gold.")
@@ -1512,62 +2224,64 @@ class AspyriaWindow(QMainWindow):
 
     def buy_selected_upgrade(self) -> None:
         if self.data is None:
-            self.data = SaveData()
+            self.data = SaveData(meta=self.profile_meta)
         stat = self.selected_upgrade_stat()
         if not stat:
             self.warn("Select a stat first.")
             return
-        ok, message = buy_upgrade(self.data.meta, stat)
+        ok, message = buy_upgrade(self.profile_meta, stat)
         self.log(message)
         self.sound.play("coin" if ok else "error")
-        self.save_current_slot()
+        self.save_profile_state()
         self.refresh_all()
 
     def refund_selected_upgrade(self) -> None:
         if self.data is None:
-            self.data = SaveData()
+            self.data = SaveData(meta=self.profile_meta)
         stat = self.selected_upgrade_stat()
         if not stat:
             self.warn("Select a stat first.")
             return
-        ok, message = refund_upgrade(self.data.meta, stat)
+        ok, message = refund_upgrade(self.profile_meta, stat)
         self.log(message)
         self.sound.play("coin" if ok else "error")
-        self.save_current_slot()
+        self.save_profile_state()
         self.refresh_all()
 
     def buy_inventory_slot(self) -> None:
         if self.data is None:
-            self.data = SaveData()
-        ok, message = buy_meta_inventory_slot(self.data.meta)
+            self.data = SaveData(meta=self.profile_meta)
+        ok, message = buy_meta_inventory_slot(self.profile_meta)
         self.log(message)
         self.sound.play("coin" if ok else "error")
-        self.save_current_slot()
+        self.save_profile_state()
         self.refresh_all()
 
     def refund_inventory_slot(self) -> None:
         if self.data is None:
-            self.data = SaveData()
+            self.data = SaveData(meta=self.profile_meta)
         run = self.data.run
-        if run and len(run.inventory) > self.data.meta.inventory_capacity() - 1:
+        if run and len(run.inventory) > self.profile_meta.inventory_capacity() - 1:
             self.warn("Inventory is too full to refund a slot right now.")
             return
-        ok, message = refund_meta_inventory_slot(self.data.meta)
+        ok, message = refund_meta_inventory_slot(self.profile_meta)
         self.log(message)
         self.sound.play("coin" if ok else "error")
-        self.save_current_slot()
+        self.save_profile_state()
         self.refresh_all()
 
     def apply_settings(self) -> None:
         self.settings.language = self.language_combo.currentText()
-        self.settings.sound_volume = self.volume_slider.value()
+        self.settings.sfx_volume = self.sfx_volume_slider.value()
+        self.settings.music_volume = self.music_volume_slider.value()
         selected_resolution = self.resolution_combo.currentText()
         self.settings.fullscreen = self.fullscreen_check.isChecked() or selected_resolution == "Fullscreen"
         if selected_resolution != "Fullscreen":
             self.settings.resolution = selected_resolution
         save_settings(self.settings)
         self.t = Translator(self.settings.language, self.settings.enabled_mods).t
-        self.sound.set_volume(self.settings.sound_volume)
+        self.sound.set_sfx_volume(self.settings.sfx_volume)
+        self.sound.set_music_volume(self.settings.music_volume)
         self.apply_resolution()
         self.warn("Settings saved. Restart the window to refresh every translated label.")
 
@@ -1632,18 +2346,275 @@ class AspyriaWindow(QMainWindow):
         run = self.data.run if self.data else None
         if run is None:
             return []
-        table = self.shop_inventory_table if self.tabs.currentWidget() == self.tabs.widget(2) else self.inventory_table
-        rows = sorted({index.row() for index in table.selectedIndexes()})
-        selected = []
-        for row in rows:
-            cell = table.item(row, 0)
-            if cell is None:
-                continue
-            item_id = cell.data(_user_role())
-            match = next((item for item in run.inventory if item.id == item_id), None)
-            if match:
-                selected.append(match)
-        return selected
+        return [item for item in run.inventory if item.id in self.selected_inventory_ids]
+
+    def item_by_id(self, item_id: str) -> Item | None:
+        run = self.data.run if self.data else None
+        if run is None:
+            return None
+        for item in run.inventory + run.equipped_items():
+            if item.id == item_id:
+                return item
+        return None
+
+    def inventory_table_selection_changed(self, area: str) -> None:
+        if self.refreshing_inventory_tables:
+            return
+        table = self.inventory_table if area == "inventory" else self.shop_inventory_table
+        item_id = table.item_id_for_row(table.currentRow())
+        if item_id:
+            self.selected_inventory_ids = {item_id}
+            self.selected_equipment_slot = ""
+            self.active_sell_key = (area, item_id, "")
+        else:
+            self.selected_inventory_ids.clear()
+            self.active_sell_key = None
+        self.refresh_inventory_action_buttons()
+        self.refresh_shop_tab()
+
+    def inventory_table_double_clicked(self, area: str) -> None:
+        item = self.selected_inventory_item()
+        run = self.data.run if self.data else None
+        if run is None or item is None:
+            return
+        self.log(equip_item(run, item))
+        self.selected_inventory_ids.clear()
+        self.selected_equipment_slot = item.slot
+        self.active_sell_key = None
+        self.normalize_current_hp()
+        self.save_current_slot()
+        self.refresh_all()
+
+    def slot_clicked(self, slot: ItemSlotWidget) -> None:
+        modifiers = QApplication.keyboardModifiers()
+        multi = bool(modifiers & _control_modifier())
+        if slot.area == "equipment":
+            self.selected_equipment_slot = slot.equipment_slot
+            self.active_sell_key = (slot.area, slot.item_id, slot.equipment_slot) if slot.item_id else None
+            if not multi:
+                self.selected_inventory_ids.clear()
+        elif slot.item_id:
+            if not multi:
+                self.selected_inventory_ids = {slot.item_id}
+            elif slot.item_id in self.selected_inventory_ids:
+                self.selected_inventory_ids.remove(slot.item_id)
+            else:
+                self.selected_inventory_ids.add(slot.item_id)
+            self.selected_equipment_slot = ""
+            self.active_sell_key = (slot.area, slot.item_id, "")
+        elif not multi:
+            self.selected_inventory_ids.clear()
+            self.selected_equipment_slot = ""
+            self.active_sell_key = None
+        self.refresh_inventory_tables()
+        self.refresh_shop_tab()
+
+    def should_show_slot_sell(self, area: str, item: Item | None, equipment_slot: str = "") -> bool:
+        if item is None or self.active_sell_key is None:
+            return False
+        active_area, active_item_id, active_equipment_slot = self.active_sell_key
+        return active_area == area and active_item_id == item.id and active_equipment_slot == equipment_slot
+
+    def sell_slot_item(self, slot: ItemSlotWidget) -> None:
+        run = self.data.run if self.data else None
+        if run is None:
+            return
+        item = None
+        if slot.area == "equipment":
+            item = run.equipment.get(slot.equipment_slot)
+        elif slot.item_id:
+            item = next((row for row in run.inventory if row.id == slot.item_id), None)
+        if item is None:
+            self.warn("Select an item first.")
+            return
+        self.log(sell_item(run, item))
+        self.sound.play("coin")
+        self.selected_inventory_ids.discard(item.id)
+        if self.selected_equipment_slot == slot.equipment_slot:
+            self.selected_equipment_slot = ""
+        self.active_sell_key = None
+        self.normalize_current_hp()
+        self.save_current_slot()
+        self.refresh_all()
+
+    def take_off_slot_item(self, slot: ItemSlotWidget) -> None:
+        run = self.data.run if self.data else None
+        if run is None or slot.area != "equipment":
+            return
+        ok, message = unequip_item(self.data.meta, run, slot.equipment_slot)
+        self.log(message)
+        if not ok:
+            self.warn(message)
+            return
+        moved = run.inventory[-1] if run.inventory else None
+        self.selected_inventory_ids = {moved.id} if moved else set()
+        self.selected_equipment_slot = ""
+        self.active_sell_key = None
+        self.normalize_current_hp()
+        self.save_current_slot()
+        self.refresh_all()
+
+    def begin_slot_drag(self, slot: ItemSlotWidget) -> None:
+        item = slot.current_item
+        self.dragged_item_slot = item.slot if item else ""
+        self.hide_item_hover(slot)
+        for equipment_slot, widget in self.equipment_slots.items():
+            if not self.dragged_item_slot:
+                state = ""
+            elif equipment_slot == self.dragged_item_slot:
+                state = "valid"
+            else:
+                state = "invalid"
+            widget.set_drag_target_state(state)
+        self.refresh_inventory_action_buttons()
+
+    def begin_inventory_table_drag(self, table: InventoryTableWidget, row: int) -> None:
+        item = self.item_by_id(table.item_id_for_row(row))
+        self.dragged_item_slot = item.slot if item else ""
+        self.hide_item_hover()
+        for equipment_slot, widget in self.equipment_slots.items():
+            if not self.dragged_item_slot:
+                state = ""
+            elif equipment_slot == self.dragged_item_slot:
+                state = "valid"
+            else:
+                state = "invalid"
+            widget.set_drag_target_state(state)
+
+    def end_slot_drag(self) -> None:
+        self.dragged_item_slot = ""
+        for widget in list(self.equipment_slots.values()):
+            widget.set_drag_target_state("")
+
+    def show_item_hover(self, slot: ItemSlotWidget) -> None:
+        if slot.current_item is None:
+            return
+        self.show_item_hover_for_item(slot.current_item, slot.mapToGlobal(slot.rect().topRight()), slot)
+
+    def show_item_hover_for_item(self, item: Item, anchor: QPoint, source_widget: QWidget | None = None) -> None:
+        if self.item_hover is None:
+            self.item_hover = ItemHoverCard(self)
+        self.item_hover.refresh(item)
+        self.item_hover.adjustSize()
+        width = self.item_hover.width()
+        height = self.item_hover.height()
+        position = QPoint(anchor.x() + 12, anchor.y())
+        if source_widget is not None:
+            position.setY(anchor.y() + max(0, (source_widget.height() - height) // 2))
+        window_top_left = self.mapToGlobal(self.rect().topLeft())
+        window_bottom_right = self.mapToGlobal(self.rect().bottomRight())
+        margin = 12
+        right_limit = window_bottom_right.x() - margin
+        left_limit = window_top_left.x() + margin
+        top_limit = window_top_left.y() + margin
+        bottom_limit = window_bottom_right.y() - margin
+        if position.x() + width > right_limit:
+            position.setX(anchor.x() - width - margin)
+        position.setX(max(left_limit, min(position.x(), right_limit - width)))
+        position.setY(max(top_limit, min(position.y(), bottom_limit - height)))
+        self.item_hover.move(position)
+        self.item_hover.show()
+
+    def hide_item_hover(self, slot: ItemSlotWidget | None = None) -> None:
+        if self.item_hover is not None:
+            self.item_hover.hide()
+
+    def handle_slot_drop(self, payload: str, target: ItemSlotWidget) -> bool:
+        run = self.data.run if self.data else None
+        if run is None:
+            return False
+        self.active_sell_key = None
+        parts = payload.split("|")
+        if len(parts) != 4:
+            return False
+        source_area, source_index_text, item_id, source_slot = parts
+        try:
+            source_index = int(source_index_text)
+        except ValueError:
+            source_index = -1
+        if source_area in {"inventory", "shop_inventory"}:
+            item = next((row for row in run.inventory if row.id == item_id), None)
+            if item is None:
+                return False
+            if target.area == "equipment":
+                if target.equipment_slot != item.slot:
+                    self.warn(f"{item.name} belongs in {item.slot}.")
+                    return False
+                self.log(equip_item(run, item))
+                self.selected_inventory_ids.clear()
+                self.selected_equipment_slot = target.equipment_slot
+            elif target.area in {"inventory", "shop_inventory"}:
+                if source_index < 0 or source_index >= len(run.inventory):
+                    source_index = run.inventory.index(item)
+                target_index = max(0, min(target.index, len(run.inventory) - 1))
+                run.inventory.pop(source_index)
+                run.inventory.insert(target_index, item)
+                self.selected_inventory_ids = {item.id}
+            else:
+                return False
+        elif source_area == "equipment":
+            if target.area not in {"inventory", "shop_inventory"}:
+                return False
+            ok, message = unequip_item(self.data.meta, run, source_slot)
+            self.log(message)
+            if not ok:
+                self.warn(message)
+                return False
+            item = run.inventory[-1]
+            target_index = max(0, min(target.index, len(run.inventory) - 1))
+            run.inventory.remove(item)
+            run.inventory.insert(target_index, item)
+            self.selected_inventory_ids = {item.id}
+            self.selected_equipment_slot = ""
+        else:
+            return False
+        self.normalize_current_hp()
+        self.save_current_slot()
+        self.refresh_all()
+        return True
+
+    def handle_inventory_table_drop(self, payload: str, target_index: int) -> bool:
+        run = self.data.run if self.data else None
+        if run is None:
+            return False
+        self.active_sell_key = None
+        parts = payload.split("|")
+        if len(parts) != 4:
+            return False
+        source_area, source_index_text, item_id, source_slot = parts
+        try:
+            source_index = int(source_index_text)
+        except ValueError:
+            source_index = -1
+        if source_area in {"inventory", "shop_inventory"}:
+            item = next((row for row in run.inventory if row.id == item_id), None)
+            if item is None:
+                return False
+            if source_index < 0 or source_index >= len(run.inventory):
+                source_index = run.inventory.index(item)
+            target_index = max(0, min(target_index, len(run.inventory) - 1))
+            run.inventory.pop(source_index)
+            run.inventory.insert(target_index, item)
+            self.selected_inventory_ids = {item.id}
+            self.selected_equipment_slot = ""
+        elif source_area == "equipment":
+            ok, message = unequip_item(self.data.meta, run, source_slot)
+            self.log(message)
+            if not ok:
+                self.warn(message)
+                return False
+            item = run.inventory[-1]
+            target_index = max(0, min(target_index, len(run.inventory) - 1))
+            run.inventory.remove(item)
+            run.inventory.insert(target_index, item)
+            self.selected_inventory_ids = {item.id}
+            self.selected_equipment_slot = ""
+        else:
+            return False
+        self.normalize_current_hp()
+        self.save_current_slot()
+        self.refresh_all()
+        return True
 
     def selected_upgrade_stat(self) -> str | None:
         row = self.upgrade_table.currentRow()
@@ -1668,13 +2639,15 @@ class AspyriaWindow(QMainWindow):
 
     def refresh_game_page(self) -> None:
         run = self.data.run if self.data else None
+        scout_label = self.t("game.scout")
+        if run is not None:
+            scout_label = f"{scout_label} ({scouting_cost(run)} coins)"
+        self.scout_button.setText(scout_label)
         for button in (
             self.save_button,
             self.retire_button,
             self.fight_button,
             self.scout_button,
-            self.equip_button,
-            self.sell_button,
             self.drop_button,
         ):
             button.setEnabled(self.data is not None and (button == self.save_button or run is not None))
@@ -1686,15 +2659,16 @@ class AspyriaWindow(QMainWindow):
         self.stats_table.setRowCount(0)
         run = self.data.run if self.data else None
         if run is None:
-            self.run_summary.setText(self.t("game.no_active_run"))
+            _set_label_text(self.run_summary, self.t("game.no_active_run"))
             self.xp_status.setText("")
             self.xp_bar.setValue(0)
             self.xp_bar.parentWidget().setStyleSheet("")
-            self.next_threat.setText("")
+            _set_label_text(self.next_threat, "")
             return
         location = LOCATIONS[run.location_index]
         stats = effective_stats(self.data.meta, run)
-        self.run_summary.setText(
+        _set_label_text(
+            self.run_summary,
             f"Location: {location.name} | Loop tier {run.loop_tier} | "
             f"Fight {run.fights_in_location}/{location.fights_to_boss}\n"
             f"HP: {run.current_hp}/{int(stats['HP'])} | "
@@ -1705,7 +2679,8 @@ class AspyriaWindow(QMainWindow):
         next_level = run.level + 1
         reward_text = "Next reward: milestone perk" if next_level % 5 == 0 else "Next reward: stat choice"
         pending_text = f" | Pending rewards: {len(run.pending_level_rewards)}" if run.pending_level_rewards else ""
-        self.xp_status.setText(
+        _set_label_text(
+            self.xp_status,
             f"Level {run.level} | XP {run.xp}/{xp_needed} | {xp_needed - run.xp} XP to next level | "
             f"{reward_text}{pending_text}"
         )
@@ -1714,9 +2689,10 @@ class AspyriaWindow(QMainWindow):
         milestone_style = "QGroupBox { border: 2px solid #c4952d; }" if next_level % 5 == 0 else ""
         self.xp_bar.parentWidget().setStyleSheet(milestone_style)
         if self.last_scout_lines:
-            self.next_threat.setText("\n".join(self.last_scout_lines))
+            _set_label_text(self.next_threat, "\n".join(self.last_scout_lines))
         else:
-            self.next_threat.setText(
+            _set_label_text(
+                self.next_threat,
                 f"Next fight: {'boss' if run.fights_in_location >= location.fights_to_boss else 'mob'}\n"
                 f"Route: {location.name}\nScout cost: {scouting_cost(run)} coins"
             )
@@ -1731,76 +2707,139 @@ class AspyriaWindow(QMainWindow):
         self.fill_table(self.stats_table, rows)
 
     def refresh_inventory_tables(self) -> None:
-        for table in (self.equipment_table, self.inventory_table, self.shop_inventory_table):
-            table.setRowCount(0)
+        self.hide_item_hover()
         run = self.data.run if self.data else None
         if run is None:
+            for widget in self.equipment_slots.values():
+                widget.refresh(None, False)
+            for table in (self.inventory_table, self.shop_inventory_table):
+                table.setRowCount(0)
+            self.refresh_inventory_action_buttons()
             return
-        self.equipment_table.setRowCount(len(EQUIPMENT_SLOTS))
-        for row, slot in enumerate(EQUIPMENT_SLOTS):
+        for slot, widget in self.equipment_slots.items():
             item = run.equipment.get(slot)
-            values = [slot, item.label() if item else "-", item.stat_line() if item else ""]
-            for col, value in enumerate(values):
-                cell = QTableWidgetItem(str(value))
-                if item and col == 1:
-                    rarity_color, _ = item_colors(item)
-                    cell.setBackground(QBrush(QColor(rarity_color)))
-                    cell.setForeground(QBrush(QColor(readable_text_for_backgrounds(rarity_color))))
-                self.equipment_table.setItem(row, col, cell)
-        rows = [
-            (item, [item.label(), item.slot, item.rarity, item.quality, str(item.ilevel), str(item.value), item.stat_line()])
-            for item in run.inventory
-        ]
-        for table in (self.inventory_table, self.shop_inventory_table):
-            table.setRowCount(len(rows))
-            for row, (item, values) in enumerate(rows):
-                rarity_color, quality_color = item_colors(item)
-                for col, value in enumerate(values):
-                    cell = QTableWidgetItem(value)
-                    if col == 0:
-                        cell.setData(_role_offset(1), rarity_color)
-                        cell.setData(_role_offset(2), quality_color)
-                        cell.setForeground(QBrush(QColor(readable_text_for_backgrounds(rarity_color, quality_color))))
-                    elif col == 2:
-                        cell.setBackground(QBrush(QColor(rarity_color)))
-                        cell.setForeground(QBrush(QColor(readable_text_for_backgrounds(rarity_color))))
-                    elif col == 3:
-                        cell.setBackground(QBrush(QColor(quality_color)))
-                        cell.setForeground(QBrush(QColor(readable_text_for_backgrounds(quality_color))))
-                    if col == 0:
-                        cell.setData(_user_role(), item.id)
-                    table.setItem(row, col, cell)
+            widget.refresh(item, self.selected_equipment_slot == slot, self.should_show_slot_sell("equipment", item, slot))
+        self.selected_inventory_ids = {
+            item_id for item_id in self.selected_inventory_ids if any(item.id == item_id for item in run.inventory)
+        }
+        if self.active_sell_key and not any(
+            self.should_show_slot_sell("equipment", item, slot)
+            for slot, item in ((slot, run.equipment.get(slot)) for slot in EQUIPMENT_SLOTS)
+        ) and not any(item.id == self.active_sell_key[1] for item in run.inventory):
+            self.active_sell_key = None
+        self.refreshing_inventory_tables = True
+        try:
+            self.populate_inventory_table(self.inventory_table, run)
+            self.populate_inventory_table(self.shop_inventory_table, run)
+        finally:
+            self.refreshing_inventory_tables = False
+        self.refresh_inventory_action_buttons()
+
+    def populate_inventory_table(self, table: InventoryTableWidget, run: RunState) -> None:
+        table.setRowCount(len(run.inventory))
+        selected_row = -1
+        for row, item in enumerate(run.inventory):
+            stat_parts = [
+                part.strip()
+                for part in item.stat_line().split(",")
+                if part.strip() and not part.strip().startswith("Drawback:")
+            ][:6]
+            values = [
+                item.name,
+                item.set_name or "-",
+                item.rarity,
+                item.quality,
+                str(item.ilevel),
+                str(sell_value(item)),
+                *stat_parts,
+            ]
+            values.extend(["-"] * (len(InventoryTableWidget.COLUMNS) - len(values)))
+            rarity_top, rarity_bottom = item_colors(item)
+            for col, value in enumerate(values[: len(InventoryTableWidget.COLUMNS)]):
+                cell = _table_item(value)
+                if col == 0:
+                    cell.setData(_user_role(), item.id)
+                if col in {0, 2, 3}:
+                    cell.setForeground(QBrush(QColor(readable_text_for_backgrounds(rarity_top, rarity_bottom))))
+                    cell.setBackground(QBrush(QColor(rarity_bottom)))
+                table.setItem(row, col, cell)
+            if item.id in self.selected_inventory_ids:
+                selected_row = row
+        if selected_row >= 0:
+            table.selectRow(selected_row)
+        elif table.currentRow() >= table.rowCount():
+            table.clearSelection()
+
+    def refresh_inventory_action_buttons(self) -> None:
+        item = self.selected_inventory_item()
+        cost = repair_cost(item) if item else 0
+        for improve_button, sell_button in (
+            (getattr(self, "inventory_improve_button", None), getattr(self, "inventory_sell_button", None)),
+            (getattr(self, "shop_inventory_improve_button", None), getattr(self, "shop_inventory_sell_button", None)),
+        ):
+            if not improve_button or not sell_button:
+                continue
+            improve_button.setVisible(item is not None)
+            sell_button.setVisible(item is not None)
+            if item is None:
+                continue
+            improve_button.setText(f"{self.t('game.improve')} ({cost} coins)" if cost > 0 else f"{self.t('game.improve')} (max)")
+            sell_button.setText(f"{self.t('game.sell')} ({sell_value(item)} coins)")
 
     def refresh_shop_tab(self) -> None:
         run = self.data.run if self.data else None
         if run is None:
-            self.shop_status.setText(self.t("game.no_active_run"))
+            _set_label_text(self.shop_status, self.t("game.no_active_run"))
+            if hasattr(self, "buy_random_button"):
+                self.buy_random_button.setText(self.t("game.buy_random_gear"))
+            if hasattr(self, "medkit_buttons"):
+                for size, button in self.medkit_buttons.items():
+                    button.setText(f"{size.title()} Medkit")
             return
         stats = effective_stats(self.data.meta, run)
-        self.shop_status.setText(
-            f"Coins: {run.coins} | Random gear caravan failure: 25% | "
-            f"Failure pity: +{run.random_gear_failures}% rarity/+{run.random_gear_failures}% quality | "
-            f"Current offer price: {run.random_gear_offer_cost or 'rolls on next purchase'} | "
-            f"Medkits: small {medkit_cost(run, 'small')}, medium {medkit_cost(run, 'medium')}, large {medkit_cost(run, 'large')} | "
-            f"Luck: {stats['Luck%']:.1f}% | Enemy Scaling: {stats['Enemy Scaling%']:.1f}%"
+        caravan_item, caravan_cost = self.caravan_offer_preview(run, stats["Luck%"], stats["Enemy Scaling%"])
+        if hasattr(self, "buy_random_button"):
+            self.buy_random_button.setText(f"{self.t('game.buy_random_gear')} ({caravan_cost} coins)")
+        if hasattr(self, "medkit_buttons"):
+            labels = {"small": "Small Medkit", "medium": "Medium Medkit", "large": "Large Medkit"}
+            for size, button in self.medkit_buttons.items():
+                button.setText(f"{labels[size]} ({medkit_cost(run, size)} coins)")
+        _set_label_text(
+            self.shop_status,
+            f"Coins: {run.coins} | Caravan item: {caravan_item.label()} | Cost: {caravan_cost} coins | "
+            f"Random gear caravan failure: 25% | "
+            f"Failure pity: +{run.random_gear_failures}% rarity/+{run.random_gear_failures}% quality"
         )
+
+    def caravan_offer_preview(self, run: RunState, luck: float, enemy_scaling: float) -> tuple[Item, int]:
+        if run.random_gear_offer and run.random_gear_offer_cost > 0:
+            return Item.from_dict(run.random_gear_offer), run.random_gear_offer_cost
+        item = roll_item(
+            self.peek_rng_for_run(),
+            run,
+            luck,
+            enemy_scaling,
+            merchant_pity=float(run.random_gear_failures),
+        )
+        return item, caravan_price(item)
 
     def refresh_enhancements(self) -> None:
         if self.data is None:
-            self.enhancement_summary.setText("Load or create a save slot first.")
+            _set_label_text(self.enhancement_summary, "Load or create a save slot first.")
             self.upgrade_table.setRowCount(0)
             return
         meta = self.data.meta
         locked = ", ".join(self.data.run.locked_stats) if self.data.run and self.data.run.locked_stats else "-"
-        self.enhancement_summary.setText(
+        _set_label_text(
+            self.enhancement_summary,
             f"Gold: {meta.gold} | Inventory capacity: {meta.inventory_capacity()} | Locked stats: {locked}"
         )
         self.upgrade_table.setRowCount(len(STAT_KEYS))
         for row, stat in enumerate(STAT_KEYS):
             level = meta.upgrades.get(stat, 0)
-            values = [stat, str(level), "MAX" if level >= 50 else str(upgrade_cost(stat, level + 1)), f"+{level * (level + 1) // 2:g}"]
+            values = [stat, str(level), "MAX" if level >= 50 else str(upgrade_cost(stat, level + 1)), f"+{upgrade_bonus_for_level(level):g}"]
             for col, value in enumerate(values):
-                cell = QTableWidgetItem(value)
+                cell = QTableWidgetItem(str(value))
                 if col == 0:
                     cell.setData(_user_role(), stat)
                 self.upgrade_table.setItem(row, col, cell)
@@ -1817,7 +2856,7 @@ class AspyriaWindow(QMainWindow):
                 time.strftime("%Y-%m-%d %H:%M", time.localtime(slot.last_played_at)) if slot.last_played_at else "-",
             ]
             for col, value in enumerate(values):
-                cell = QTableWidgetItem(value)
+                cell = _table_item(value)
                 if col == 0:
                     cell.setData(_user_role(), slot.slot_id)
                 self.slots_table.setItem(row, col, cell)
@@ -1825,16 +2864,18 @@ class AspyriaWindow(QMainWindow):
     def refresh_stats_page(self) -> None:
         stats = self.data.stats if self.data else None
         if stats is None:
-            self.stats_summary.setText("Load a save slot first.")
-            self.record_summary.setText("")
+            _set_label_text(self.stats_summary, "Load a save slot first.")
+            _set_label_text(self.record_summary, "")
             self.codex_table.setRowCount(0)
             return
-        self.stats_summary.setText(
+        _set_label_text(
+            self.stats_summary,
             f"{self.t('stats.enemies')}: {stats.enemies_defeated}    "
             f"{self.t('stats.bosses')}: {stats.bosses_defeated}    "
             f"{self.t('stats.play_time')}: {format_duration(stats.play_time_seconds)}"
         )
-        self.record_summary.setText(
+        _set_label_text(
+            self.record_summary,
             f"{self.t('stats.quickest_failed')}: {format_record(stats.quickest_failed_run)}\n"
             f"{self.t('stats.longest_failed')}: {format_record(stats.longest_failed_run)}\n"
             f"{self.t('stats.quickest_success')}: {format_record(stats.quickest_successful_run)}\n"
@@ -1852,7 +2893,7 @@ class AspyriaWindow(QMainWindow):
                 str(record.highest_value),
             ]
             for col, value in enumerate(values):
-                self.codex_table.setItem(row, col, QTableWidgetItem(value))
+                self.codex_table.setItem(row, col, _table_item(value))
 
     def refresh_mods_page(self) -> None:
         mods = list_available_mods()
@@ -1866,14 +2907,14 @@ class AspyriaWindow(QMainWindow):
                 mod.description,
             ]
             for col, value in enumerate(values):
-                self.mods_table.setItem(row, col, QTableWidgetItem(value))
+                self.mods_table.setItem(row, col, _table_item(value))
         warnings = "\n".join(CONTENT_WARNINGS)
         conflicts = "\n".join(f"{conflict.kind}:{conflict.content_id} -> {', '.join(conflict.mods)}" for conflict in CONTENT_CONFLICTS)
-        self.conflict_label.setText(warnings or conflicts or self.t("mods.conflicts"))
+        _set_label_text(self.conflict_label, warnings or conflicts or self.t("mods.conflicts"))
         self.conflict_table.setRowCount(len(CONTENT_CONFLICTS))
         for row, conflict in enumerate(CONTENT_CONFLICTS):
             for col, value in enumerate([conflict.kind, conflict.content_id, ", ".join(conflict.mods)]):
-                self.conflict_table.setItem(row, col, QTableWidgetItem(value))
+                self.conflict_table.setItem(row, col, _table_item(value))
 
     def flush_play_time(self) -> None:
         if self.data is None:
@@ -1886,7 +2927,7 @@ class AspyriaWindow(QMainWindow):
         table.setRowCount(len(rows))
         for row, values in enumerate(rows):
             for col, value in enumerate(values):
-                table.setItem(row, col, QTableWidgetItem(value))
+                table.setItem(row, col, _table_item(value))
 
     def log(self, text: str) -> None:
         if hasattr(self, "log_view") and text:
@@ -1899,6 +2940,18 @@ class AspyriaWindow(QMainWindow):
     def closeEvent(self, event) -> None:
         self.save_current_slot()
         event.accept()
+
+    def keyPressEvent(self, event) -> None:
+        key = event.key()
+        enter_keys = {
+            Qt.Key.Key_Return if QT_MAJOR == 6 else Qt.Key_Return,
+            Qt.Key.Key_Enter if QT_MAJOR == 6 else Qt.Key_Enter,
+            Qt.Key.Key_Space if QT_MAJOR == 6 else Qt.Key_Space,
+        }
+        if self.stack.currentWidget() == self.disclaimer_page and key in enter_keys:
+            self.show_brand_splash()
+            return
+        super().keyPressEvent(event)
 
 
 def format_duration(seconds: float) -> str:

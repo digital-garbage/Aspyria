@@ -41,6 +41,7 @@ def consume_relic_charge(run: RunState, effect_id: str) -> bool:
 def apply_passive_relics(run: RunState) -> None:
     multiplier = 1.0
     extra_options = 0
+    base_extra_options = min(2, max(run.extra_level_options, run.extra_level_options_chosen))
     loot_bonus = 0.0
     heal_bonus = 0.0
     for relic in equipped_relic_effects(run):
@@ -55,6 +56,6 @@ def apply_passive_relics(run: RunState) -> None:
         elif effect_id == "post_fight_heal_bonus":
             heal_bonus += float(params.get("heal_bonus", 0.0))
     run.level_reward_multiplier = multiplier
-    run.extra_level_options = extra_options
+    run.extra_level_options = min(2, base_extra_options + extra_options)
     run.loot_bonus_chance = loot_bonus
     run.post_fight_heal_bonus = heal_bonus

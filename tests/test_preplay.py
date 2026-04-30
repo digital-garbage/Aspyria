@@ -10,12 +10,18 @@ from ascii_climb.combat import (
     enemy_hit,
     flee_from_combat,
     get_or_create_active_fight,
+    grow_guarded_stance,
+    grow_reckless_stance,
+    grow_steady_stance,
     maybe_break_reckless_item,
+    percent_triggers,
+    player_hit,
+    resolve_defeat_penalty,
     run_combat,
     run_combat_turn,
     scout_preview,
 )
-from ascii_climb.content import ENEMIES, LOCATIONS, STORY
+from ascii_climb.content import ENCOUNTERS, ENEMIES, LOCATIONS, STORY
 from ascii_climb.encounters import random_event
 from ascii_climb.ilevel import current_ilevel_range, gear_advantage_bonuses
 from ascii_climb.leveling import (
@@ -25,12 +31,12 @@ from ascii_climb.leveling import (
     generate_level_reward_options,
     queue_level_rewards,
 )
-from ascii_climb.loot import corrupted_chance_percent, roll_item, special_quality_chance_percent
+from ascii_climb.loot import corrupted_chance_percent, repair_cost, roll_item, sell_value, special_quality_chance_percent
 from ascii_climb.meta import effective_stats
 from ascii_climb.models import Item, MetaState, RunState
 from ascii_climb.progression import EnhancementOption, describe_enhancement
 from ascii_climb.relics import apply_passive_relics
-from ascii_climb.shops import buy_medkit, buy_random_gear, equip_item, get_or_create_random_gear_offer, medkit_cost
+from ascii_climb.shops import buy_medkit, buy_random_gear, equip_item, get_or_create_random_gear_offer, medkit_cost, repair_item
 from ascii_climb.sound import SoundManager
 from ascii_climb.visuals import item_colors, readable_text_for_backgrounds
 
@@ -59,6 +65,12 @@ class LevelRewardTests(unittest.TestCase):
         options = generate_level_reward_options(random.Random(1), run, {"type": "stat"})
         self.assertTrue(options)
 
+    def test_vampirism_is_not_a_level_reward_option(self):
+        run = RunState(favored_stat="Vampirism%")
+        options = generate_level_reward_options(random.Random(1), run, {"type": "stat"})
+        self.assertTrue(options)
+        self.assertNotIn("Vampirism%", {option.get("stat") for option in options})
+
     def test_perk_reward_descriptions_show_real_effects(self):
         reward = {"title": "Royal Purse", "effect": "bonus_coins", "params": {"coins": 60}}
         self.assertEqual(describe_level_reward(reward), "Royal Purse: gain 60 coins immediately")
@@ -72,6 +84,16 @@ class LevelRewardTests(unittest.TestCase):
         text = describe_level_reward_for_run(run, {"type": "stat", "title": "Test ATK", "stat": "ATK", "amount": 3})
         self.assertIn("+0", text)
         self.assertIn("[LOCKED]", text)
+
+    def test_extra_level_option_is_capped_at_two_applications(self):
+        run = RunState()
+        reward = {"title": "Broad Training", "effect": "extra_level_option", "params": {"extra_options": 1}}
+        apply_level_reward(run, reward)
+        apply_level_reward(run, reward)
+        message = apply_level_reward(run, reward)
+        self.assertEqual(run.extra_level_options, 2)
+        self.assertEqual(run.extra_level_options_chosen, 2)
+        self.assertIn("capped", message)
 
 
 class ILevelTests(unittest.TestCase):
@@ -91,9 +113,19 @@ class ILevelTests(unittest.TestCase):
 
 
 class CombatFlowTests(unittest.TestCase):
-    def test_attack_count_can_reach_three(self):
+    def test_sub_100_multi_attack_can_reach_two(self):
         counts = {attack_count(random.Random(seed), 95) for seed in range(40)}
-        self.assertIn(3, counts)
+        self.assertIn(2, counts)
+
+    def test_over_100_multi_attack_grants_guaranteed_extra_attacks(self):
+        self.assertEqual(attack_count(random.Random(1), 100), 2)
+        self.assertEqual(attack_count(random.Random(1), 200), 3)
+        counts = {attack_count(random.Random(seed), 150) for seed in range(30)}
+        self.assertEqual(counts, {2, 3})
+
+    def test_percent_triggers_supports_over_100_rolls(self):
+        self.assertEqual(percent_triggers(random.Random(1), 220), 3)
+        self.assertEqual(percent_triggers(random.Random(2), 220), 2)
 
     def test_run_combat_queues_level_reward(self):
         run = RunState(seed=1, xp=95)
@@ -126,6 +158,18 @@ class CombatFlowTests(unittest.TestCase):
         self.assertIn("-8% evasion", STANCE_DESCRIPTIONS["reckless"])
         self.assertIn("20% chance", STANCE_DESCRIPTIONS["reckless"])
 
+    def test_stance_growth_multipliers_accumulate(self):
+        run = RunState()
+        logs = []
+        grow_steady_stance(run, logs)
+        grow_guarded_stance(run, logs)
+        grow_reckless_stance(run, logs)
+        self.assertAlmostEqual(run.steady_atk_multiplier, 1.01)
+        self.assertAlmostEqual(run.guarded_evasion_multiplier, 1.01)
+        self.assertAlmostEqual(run.reckless_multi_multiplier, 1.01)
+        self.assertAlmostEqual(run.reckless_crit_multiplier, 1.01)
+        self.assertAlmostEqual(run.reckless_break_multiplier, 1.01)
+
     def test_enemy_hit_log_can_show_damage_and_hp_after_application(self):
         run = RunState(current_hp=50)
         enemy = ENEMIES[LOCATIONS[0].enemy_names[0]]
@@ -135,13 +179,37 @@ class CombatFlowTests(unittest.TestCase):
         self.assertIn("Damage:", full_line)
         self.assertIn("HP:", full_line)
 
+    def test_over_100_evasion_guarantees_evade(self):
+        enemy = ENEMIES[LOCATIONS[0].enemy_names[0]]
+        damage, line = enemy_hit(random.Random(2), enemy, 999, {"Evasion%": 100.0}, "steady")
+        self.assertEqual(damage, 0)
+        self.assertIn("evade", line.lower())
+
+    def test_overcrit_adds_repeated_crit_damage_chunks(self):
+        class FlatRandom(random.Random):
+            def uniform(self, a, b):
+                return 1.0
+
+            def random(self):
+                return 0.99
+
+        damage, tags = player_hit(
+            FlatRandom(1),
+            {"ATK": 100.0, "CR%": 220.0, "CD%": 50.0, "Megacrit Chance%": 0.0},
+            "steady",
+        )
+        self.assertEqual(damage, 200)
+        self.assertIn("critical x2", tags)
+
     def test_reckless_can_break_equipped_item(self):
         run = RunState()
         run.equipment["weapon"] = Item("w", "Test Blade", "weapon", "common", "used", 1, {"ATK": 1}, value=1)
         logs = []
-        maybe_break_reckless_item(random.Random(1), run, logs)
+        event = maybe_break_reckless_item(random.Random(1), run, logs)
         self.assertIsNone(run.equipment["weapon"])
         self.assertIn("shatters", logs[0])
+        self.assertTrue(event["item_broken"])
+        self.assertEqual(event["item_slot"], "weapon")
 
     def test_scout_preview_does_not_mutate_run_counter(self):
         run = RunState(seed=12, rng_counter=3)
@@ -196,8 +264,10 @@ class CombatFlowTests(unittest.TestCase):
         }
         result = run_combat(random.Random(3), MetaState(), run)
         self.assertFalse(result.victory)
+        self.assertIsNotNone(run.pending_defeat_penalty)
+        resolve_defeat_penalty(MetaState(), run, run.pending_defeat_penalty["options"][0], result.logs)
         self.assertEqual(run.current_hp, int(effective_stats(MetaState(), run)["HP"] * 0.30))
-        self.assertTrue(any("recover to" in line.lower() for line in result.summary))
+        self.assertTrue(any("healers demand a price" in line.lower() for line in result.summary))
 
     def test_flee_keeps_same_active_enemy(self):
         run = RunState(seed=1)
@@ -234,10 +304,10 @@ class CombatFlowTests(unittest.TestCase):
 
 class LootLuckTests(unittest.TestCase):
     def test_luck_controls_corrupted_and_top_quality_chance(self):
-        self.assertEqual(corrupted_chance_percent(0, 0, 1), 1.0)
-        self.assertEqual(corrupted_chance_percent(20, 0, 1), 6.0)
+        self.assertEqual(corrupted_chance_percent(0, 0, 1), 0.8)
+        self.assertEqual(corrupted_chance_percent(20, 0, 1), 4.0)
         self.assertEqual(special_quality_chance_percent(0, 1), 1.0)
-        self.assertEqual(special_quality_chance_percent(20, 1), 6.0)
+        self.assertEqual(special_quality_chance_percent(20, 1), 7.0)
 
     def test_random_gear_failure_adds_pity_bonus(self):
         run = RunState(coins=100000)
@@ -265,6 +335,20 @@ class LootLuckTests(unittest.TestCase):
         item = roll_item(random.Random(2), RunState(seed=1), 0.0, 0.0, force_rarity="common", force_quality="used")
         self.assertGreaterEqual(max(abs(value) for value in item.stats.values()), 2)
 
+    def test_item_rarity_controls_stat_count_and_excludes_gold_acquisition(self):
+        expected = {
+            "common": 1,
+            "uncommon": 2,
+            "rare": 3,
+            "mythical": 4,
+            "legendary": 5,
+            "corrupted": 6,
+        }
+        for rarity, count in expected.items():
+            item = roll_item(random.Random(12), RunState(seed=2), 0.0, 0.0, force_rarity=rarity, force_quality="used")
+            self.assertEqual(len([value for value in item.stats.values() if value]), count)
+            self.assertNotIn("Gold Acquisition Boost%", item.stats)
+
 
 class HpAndEventTests(unittest.TestCase):
     def test_hp_item_increases_current_hp_when_equipped(self):
@@ -274,28 +358,47 @@ class HpAndEventTests(unittest.TestCase):
         equip_item(run, item)
         self.assertEqual(run.current_hp, 44)
 
-    def test_medkit_cost_doubles_after_purchase(self):
+    def test_medkit_costs_keep_size_order_after_purchases(self):
         run = RunState(coins=1000, current_hp=20)
-        self.assertEqual(medkit_cost(run, "small"), 20)
+        self.assertLess(medkit_cost(run, "small"), medkit_cost(run, "medium"))
+        self.assertLess(medkit_cost(run, "medium"), medkit_cost(run, "large"))
         ok, message = buy_medkit(run, 100, "small")
         self.assertTrue(ok, message)
         self.assertEqual(run.current_hp, 40)
+        self.assertLess(medkit_cost(run, "small"), medkit_cost(run, "medium"))
+        self.assertLess(medkit_cost(run, "medium"), medkit_cost(run, "large"))
+
+    def test_item_prices_are_deterministic_and_improvement_respects_locked_stats(self):
+        item = Item("1", "Test Blade", "weapon", "rare", "used", 5, {"ATK": 10, "HP": 10}, value=1)
+        run = RunState(coins=1000, inventory=[item], locked_stats=["ATK"])
+        self.assertEqual(sell_value(item), sell_value(item))
+        self.assertEqual(repair_cost(item), repair_cost(item))
+        ok, message = repair_item(run, item)
+        self.assertTrue(ok, message)
+        self.assertEqual(item.stats["ATK"], 10)
+        self.assertGreater(item.stats["HP"], 10)
+
+    def test_new_random_events_are_loaded(self):
+        for event_id in ("broken_tax_cart", "saints_cot", "ash_blessing", "bone_dice_peddler", "scouts_string_map"):
+            self.assertIn(event_id, ENCOUNTERS)
 
 
 class PresentationAndAudioTests(unittest.TestCase):
     def test_sound_manager_tracks_music_key_without_audio_backend(self):
-        manager = SoundManager(Path("assets/sounds"), volume=70, music_root=Path("assets/music"))
+        manager = SoundManager(Path("assets/sounds"), sfx_volume=70, music_root=Path("assets/music"), music_volume=60)
         manager.play("click")
         self.assertEqual(manager.last_effect_key, "click")
         manager.set_music("menu")
         self.assertEqual(manager.current_music_key, "menu")
+        self.assertAlmostEqual(manager.sfx_volume, 0.7)
+        self.assertAlmostEqual(manager.music_volume, 0.6)
 
     def test_opening_balance_values_stay_softened(self):
         meta = MetaState()
         first_loop_boss = enemy_scale(meta, RunState(seed=1), ENEMIES["Barrow Knight"])
         second_loop_mob = enemy_scale(meta, RunState(seed=1, loop_tier=2), ENEMIES["Grave Thrall"])
         self.assertEqual(first_loop_boss[:2], (142, 12))
-        self.assertEqual(second_loop_mob[:2], (67, 9))
+        self.assertEqual(second_loop_mob[:2], (63, 8))
 
     def test_random_event_handler_dispatches_from_json_shape(self):
         run = RunState(seed=1)

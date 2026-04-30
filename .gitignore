@@ -1,0 +1,7 @@
+.DS_Store
+Archive.zip
+__pycache__/
+*.pyc
+profile.json
+savegame.json
+saves/

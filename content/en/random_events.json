@@ -57,6 +57,75 @@
       "chance": 1.0,
       "title": "Wishing Well",
       "body": "You found a wishing well. Ask carefully."
+    },
+    "broken_tax_cart": {
+      "id": "broken_tax_cart",
+      "trigger": "post_fight",
+      "weight": 0.9,
+      "chance": 1.0,
+      "title": "Broken Tax Cart",
+      "body": "A royal tax cart lies overturned. Some purses are intact, but the road still feels watched.",
+      "effects": [
+        {
+          "type": "choice_list",
+          "choices": [
+            {"id": "take", "label": "Take the scattered coins", "effects": [{"type": "reward_coins", "amount": 42}]},
+            {"id": "leave", "label": "Leave quickly", "effects": [{"type": "timed_stat_modifier", "stat": "Evasion%", "multiplier": 1.12, "fights": 2}]}
+          ]
+        }
+      ]
+    },
+    "saints_cot": {
+      "id": "saints_cot",
+      "trigger": "post_fight",
+      "weight": 0.85,
+      "chance": 1.0,
+      "title": "Saint's Cot",
+      "body": "A hidden cot still carries a saint's mark. Rest while the road is quiet.",
+      "effects": [{"type": "heal_percent", "fraction": 0.35}]
+    },
+    "ash_blessing": {
+      "id": "ash_blessing",
+      "trigger": "post_fight",
+      "weight": 0.8,
+      "chance": 1.0,
+      "title": "Ash Blessing",
+      "body": "Warm ash gathers on your weapon. It may bless the next push, or sour in your hands.",
+      "effects": [
+        {
+          "type": "choice_list",
+          "choices": [
+            {"id": "blessing", "label": "Accept the blessing", "effects": [{"type": "timed_stat_modifier", "stat": "ATK", "multiplier": 1.15, "fights": 2}]},
+            {"id": "curse", "label": "Force stronger magic", "effects": [{"type": "timed_stat_modifier", "stat": "ATK", "multiplier": 1.28, "fights": 1}, {"type": "stat_debuff", "stat": "Luck%", "amount": 3}]}
+          ]
+        }
+      ]
+    },
+    "bone_dice_peddler": {
+      "id": "bone_dice_peddler",
+      "trigger": "post_fight",
+      "weight": 0.75,
+      "chance": 1.0,
+      "title": "Bone-Dice Peddler",
+      "body": "A peddler offers a throw of bone dice: stake some coin and he will name an item from under the cloth.",
+      "effects": [
+        {
+          "type": "choice_list",
+          "choices": [
+            {"id": "gamble", "label": "Stake 25% of your coins", "effects": [{"type": "lose_coins_fraction", "fraction": 0.25}, {"type": "reward_item"}]},
+            {"id": "decline", "label": "Keep walking", "effects": [{"type": "message", "text": "You keep your purse closed."}]}
+          ]
+        }
+      ]
+    },
+    "scouts_string_map": {
+      "id": "scouts_string_map",
+      "trigger": "post_fight",
+      "weight": 0.85,
+      "chance": 1.0,
+      "title": "Scout's String Map",
+      "body": "A scout's map is stitched with red string. The next route suddenly makes more sense.",
+      "effects": [{"type": "timed_stat_modifier", "stat": "Evasion%", "multiplier": 1.10, "fights": 2}, {"type": "timed_stat_modifier", "stat": "CR%", "multiplier": 1.08, "fights": 2}]
     }
   }
 }

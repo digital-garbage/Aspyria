@@ -2,8 +2,9 @@
   "enabled_mods": [],
   "fullscreen": false,
   "language": "en",
-  "last_slot": "new-save-11",
+  "last_slot": "new-save-50",
   "mod_choices": {},
+  "music_volume": 0,
   "resolution": "1366x768",
-  "sound_volume": 70
+  "sfx_volume": 29
 }
