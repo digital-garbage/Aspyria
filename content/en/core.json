@@ -4,17 +4,18 @@
   },
   "base_stats": {
     "ATK": 12.0,
-    "CR%": 5.0,
-    "CD%": 50.0,
-    "HP": 100.0,
+    "CR%": 4.0,
+    "CD%": 45.0,
+    "HP": 110.0,
     "Luck%": 0.0,
-    "Evasion%": 3.0,
+    "Evasion%": 4.0,
     "Multi-Attack Chance%": 0.0,
     "Megacrit Chance%": 1.0,
     "Megacrit Damage%": 150.0,
     "XP Boost%": 0.0,
     "Enemy Scaling%": 0.0,
     "Coin Acquisition Boost%": 0.0,
+    "Gold Acquisition Boost%": 0.0,
     "Vampirism%": 0.0
   },
   "upgrade_base_costs": {
@@ -30,23 +31,24 @@
     "XP Boost%": 6,
     "Enemy Scaling%": 4,
     "Coin Acquisition Boost%": 6,
+    "Gold Acquisition Boost%": 8,
     "Vampirism%": 9
   },
   "rarity_multipliers": {
     "common": 1.0,
-    "uncommon": 1.35,
-    "rare": 1.9,
-    "mythical": 2.8,
-    "legendary": 4.2,
-    "corrupted": 6.2
+    "uncommon": 1.28,
+    "rare": 1.75,
+    "mythical": 2.45,
+    "legendary": 3.45,
+    "corrupted": 4.75
   },
   "quality_multipliers": {
-    "trash": 0.65,
-    "worn": 0.82,
+    "trash": 0.72,
+    "worn": 0.88,
     "used": 1.0,
-    "polished": 1.18,
-    "new": 1.38,
-    "special craft": 1.75
+    "polished": 1.16,
+    "new": 1.32,
+    "special craft": 1.68
   },
   "slot_stat_pools": {
     "weapon": ["ATK", "CR%", "CD%", "Megacrit Chance%", "Megacrit Damage%", "Vampirism%"],
@@ -167,7 +169,11 @@
     "spoils_sense": {"title": "Spoils Sense", "effect": "loot_bonus", "params": {"chance": 0.08}},
     "royal_purse": {"title": "Royal Purse", "effect": "bonus_coins", "params": {"coins": 60}},
     "broad_training": {"title": "Broad Training", "effect": "extra_level_option", "params": {"extra_options": 1}},
-    "last_retreat": {"title": "Last Retreat", "effect": "flee_protection", "params": {"charges": 1}}
+    "last_retreat": {"title": "Last Retreat", "effect": "flee_protection", "params": {"charges": 1}},
+    "camp_surgeon": {"title": "Camp Surgeon", "effect": "post_fight_heal_bonus", "params": {"heal_bonus": 0.06}},
+    "quartermaster_cache": {"title": "Quartermaster Cache", "effect": "bonus_coins", "params": {"coins": 110}},
+    "banner_scavenger": {"title": "Banner Scavenger", "effect": "loot_bonus", "params": {"chance": 0.12}},
+    "second_wind_route": {"title": "Second-Wind Route", "effect": "flee_protection", "params": {"charges": 2}}
   },
   "enemies": {
     "Grave Thrall": {
@@ -253,10 +259,10 @@
   },
   "locations": [
     {"name": "Highcrown Fields", "min_ilevel": 1, "max_ilevel": 5, "difficulty": 1.0, "fights_to_boss": 3, "enemy_names": ["Grave Thrall", "Bone Pike Acolyte", "Ash-Robed Hexer"], "boss_name": "Barrow Knight", "story": {"enter": "The war begins in the trampled fields below Highcrown."}},
-    {"name": "Chapel of Broken Bells", "min_ilevel": 4, "max_ilevel": 10, "difficulty": 1.55, "fights_to_boss": 3, "enemy_names": ["Crypt Archer", "Bell-Tower Revenant", "Moon-Bitten Scout"], "boss_name": "Choirmaster of Bones", "story": {"enter": "Broken bells hang over a chapel where the dead still sing."}},
-    {"name": "Old Court Road", "min_ilevel": 9, "max_ilevel": 16, "difficulty": 2.25, "fights_to_boss": 3, "enemy_names": ["Rot-Hound Pack", "Mirror Wight", "Mawplate Butcher"], "boss_name": "Hollow Duke", "story": {"enter": "The old road to the eastern court is lined with kneeling statues."}},
-    {"name": "Ashen Foundries", "min_ilevel": 15, "max_ilevel": 25, "difficulty": 3.35, "fights_to_boss": 3, "enemy_names": ["Plague Ledger Priest", "Grave Ox", "Funeral Pyre Choir"], "boss_name": "Cinder Lich", "story": {"enter": "The foundries burn with corpse-fire and stolen royal iron."}},
-    {"name": "Veyr's Black Citadel", "min_ilevel": 24, "max_ilevel": 40, "difficulty": 5.0, "fights_to_boss": 3, "enemy_names": ["Black Cache Angel", "Root Psalmist", "Crowned Null"], "boss_name": "Dread Necromancer Veyr", "story": {"enter": "At the edge of Aspyria, Veyr's citadel claws at the dawn."}}
+    {"name": "Chapel of Broken Bells", "min_ilevel": 4, "max_ilevel": 10, "difficulty": 1.45, "fights_to_boss": 3, "enemy_names": ["Crypt Archer", "Bell-Tower Revenant", "Moon-Bitten Scout"], "boss_name": "Choirmaster of Bones", "story": {"enter": "Broken bells hang over a chapel where the dead still sing."}},
+    {"name": "Old Court Road", "min_ilevel": 9, "max_ilevel": 16, "difficulty": 2.05, "fights_to_boss": 3, "enemy_names": ["Rot-Hound Pack", "Mirror Wight", "Mawplate Butcher"], "boss_name": "Hollow Duke", "story": {"enter": "The old road to the eastern court is lined with kneeling statues."}},
+    {"name": "Ashen Foundries", "min_ilevel": 15, "max_ilevel": 25, "difficulty": 2.95, "fights_to_boss": 3, "enemy_names": ["Plague Ledger Priest", "Grave Ox", "Funeral Pyre Choir"], "boss_name": "Cinder Lich", "story": {"enter": "The foundries burn with corpse-fire and stolen royal iron."}},
+    {"name": "Veyr's Black Citadel", "min_ilevel": 24, "max_ilevel": 40, "difficulty": 4.25, "fights_to_boss": 3, "enemy_names": ["Black Cache Angel", "Root Psalmist", "Crowned Null"], "boss_name": "Dread Necromancer Veyr", "story": {"enter": "At the edge of Aspyria, Veyr's citadel claws at the dawn."}}
   ],
   "encounters": []
 }

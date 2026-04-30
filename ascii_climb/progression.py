@@ -52,19 +52,30 @@ def _eligible_stats(run: RunState, stats: List[str]) -> List[str]:
     return [stat for stat in stats if stat not in run.run_debuffs]
 
 
+def _run_luck_hint(run: RunState) -> float:
+    equipped_luck = sum(item.stats.get("Luck%", 0.0) for item in run.equipped_items())
+    return max(0.0, run.run_buffs.get("Luck%", 0.0) + equipped_luck)
+
+
 def generate_stage_enhancements(rng: random.Random, run: RunState) -> List[EnhancementOption]:
     stats = _eligible_stats(run, MOB_BUFF_STATS)
     rng.shuffle(stats)
     options = []
+    luck = min(120.0, _run_luck_hint(run))
+    rarity_weights = [
+        max(42.0, 78.0 - luck * 0.30),
+        18.0 + luck * 0.16,
+        4.0 + luck * 0.14,
+    ]
     for stat in stats[:3]:
-        amount = 5.0 if stat in {"ATK", "HP"} else 3.0
+        amount = 4.0 if stat in {"ATK", "HP"} else 2.0
         if stat in {"Megacrit Damage%", "CD%"}:
-            amount = 8.0
-        rarity = rng.choices(["common", "uncommon", "rare"], weights=[72, 22, 6], k=1)[0]
+            amount = 5.0
+        rarity = rng.choices(["common", "uncommon", "rare"], weights=rarity_weights, k=1)[0]
         if rarity == "uncommon":
             amount *= 1.35
         elif rarity == "rare":
-            amount *= 1.8
+            amount *= 2.0
         options.append(
             EnhancementOption(
                 title=stat_label(stat),
@@ -96,9 +107,9 @@ def generate_wishing_well_options(
             penalties[stat] = 12.0 if stat not in {"ATK", "HP"} else 18.0
         if len(penalties) < 3:
             continue
-        buff = 45.0 if main in {"ATK", "HP"} else 30.0
+        buff = 38.0 if main in {"ATK", "HP"} else 24.0
         if main in {"Megacrit Damage%", "CD%"}:
-            buff = 70.0
+            buff = 56.0
         options.append(
             EnhancementOption(
                 title=f"Ask for {stat_label(main)}",

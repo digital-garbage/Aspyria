@@ -54,7 +54,14 @@ def apply_level_reward(run: RunState, reward: dict) -> str:
     elif effect == "bonus_coins":
         run.coins += int(float(params.get("coins", 0)) * multiplier)
     elif effect == "extra_level_option":
-        run.extra_level_options += int(params.get("extra_options", 1))
+        if run.extra_level_options_chosen >= 2:
+            run.chosen_perks.append(str(reward.get("id", title)))
+            return "Perk skipped: +1 choice is already capped at two applications this run."
+        gained = int(params.get("extra_options", 1))
+        remaining = max(0, 2 - run.extra_level_options_chosen)
+        applied = min(gained, remaining)
+        run.extra_level_options += applied
+        run.extra_level_options_chosen += applied
     elif effect == "flee_protection":
         run.relic_charges_used["perk_flee_protection"] = -int(params.get("charges", 1))
     run.chosen_perks.append(str(reward.get("id", title)))

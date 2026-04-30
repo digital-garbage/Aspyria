@@ -8,7 +8,15 @@ from ascii_climb.content import ENEMIES, LOCATIONS
 from ascii_climb.leveling import queue_level_rewards
 from ascii_climb.loot import roll_item
 from ascii_climb.meta import effective_stats, final_gold_payout
-from ascii_climb.models import EnemyTemplate, Item, MetaState, RANDOM_RUN_STAT_KEYS, RunState, STAT_KEYS
+from ascii_climb.models import (
+    EnemyTemplate,
+    Item,
+    MetaState,
+    PERMANENT_ONLY_STAT_KEYS,
+    RANDOM_RUN_STAT_KEYS,
+    RunState,
+    STAT_KEYS,
+)
 from ascii_climb.relics import consume_relic_charge
 from ascii_climb.state import decay_timed_modifiers, lock_stat, safe_apply_buff, sanitize_active_fight
 
@@ -49,9 +57,9 @@ class ScoutPreview:
 
 
 STANCE_DESCRIPTIONS = {
-    "steady": "Steady: balanced damage, no evasion change.",
-    "guarded": "Guarded: -18% attack, -8% crit chance, +8% evasion.",
-    "reckless": "Reckless: +22% attack, +8% crit chance, -8% evasion, 20% chance to break random equipped gear after each attack.",
+    "steady": "Steady: balanced damage and +1% ATK growth after each kill.",
+    "guarded": "Guarded: -18% attack, -8% crit chance, +8% evasion, and +1% Evasion growth after each dodge.",
+    "reckless": "Reckless: +22% attack, +8% crit chance, -8% evasion, 20% chance to break gear, and +1% Multi-Attack, crit, and break chance after each attack.",
 }
 
 
@@ -106,7 +114,7 @@ def scout_preview(rng: random.Random, meta: MetaState, run: RunState) -> ScoutPr
         enemy = next_enemy_template(rng, run)
         enemy_hp, enemy_atk, xp, coins = enemy_scale(meta, run, enemy)
         enemy_max_hp = enemy_hp
-    stats = effective_stats(meta, run)
+    stats = stance_stats(effective_stats(meta, run), run)
     player_power = max(1.0, stats.get("HP", 1.0) + stats.get("ATK", 1.0) * 8)
     enemy_power = enemy_hp + enemy_atk * 8
     ratio = enemy_power / player_power
@@ -136,16 +144,21 @@ def scout_preview(rng: random.Random, meta: MetaState, run: RunState) -> ScoutPr
 
 
 def enemy_scale(meta: MetaState, run: RunState, enemy: EnemyTemplate) -> tuple[int, int, int, int]:
-    stats = effective_stats(meta, run)
+    stats = stance_stats(effective_stats(meta, run), run)
     location = current_location(run)
-    loop_hp = 1 + (run.loop_tier - 1) * 0.46
-    loop_atk = 1 + (run.loop_tier - 1) * 0.28
+    loop_hp = 1 + (run.loop_tier - 1) * 0.38
+    loop_atk = 1 + (run.loop_tier - 1) * 0.22
     greed = 1 + stats.get("Enemy Scaling%", 0.0) / 100
     hp = int(enemy.base_hp * location.difficulty * loop_hp * greed)
-    atk = int(enemy.base_atk * (0.85 + location.difficulty * 0.18) * loop_atk * (1 + (greed - 1) * 0.8))
-    reward_scale = location.difficulty * (1 + (run.loop_tier - 1) * 0.38) * greed
+    atk = int(enemy.base_atk * (0.9 + location.difficulty * 0.15) * loop_atk * (1 + (greed - 1) * 0.65))
+    reward_scale = location.difficulty * (1 + (run.loop_tier - 1) * 0.32) * greed
+    xp_base = int(round(enemy.xp * location.difficulty * (1 + (run.loop_tier - 1) * 0.32)))
+    coin_base = int(round(enemy.coins * location.difficulty * (1 + (run.loop_tier - 1) * 0.32)))
     xp = int(round(enemy.xp * reward_scale * (1 + stats.get("XP Boost%", 0.0) / 100)))
     coins = int(round(enemy.coins * reward_scale * (1 + stats.get("Coin Acquisition Boost%", 0.0) / 100)))
+    if stats.get("Enemy Scaling%", 0.0) > 0:
+        xp = max(xp, xp_base + 1)
+        coins = max(coins, coin_base + 1)
     if enemy.boss:
         hp = int(hp * 1.15)
         atk = int(atk * 1.08)
@@ -164,6 +177,32 @@ def percent_triggers(rng: random.Random, chance: float, max_triggers: int | None
 
 def attack_count(rng: random.Random, chance: float) -> int:
     return 1 + percent_triggers(rng, chance, max_triggers=2)
+
+
+def stance_stats(stats: dict, run: RunState) -> dict:
+    adjusted = dict(stats)
+    adjusted["ATK"] = adjusted.get("ATK", 0.0) * run.steady_atk_multiplier
+    adjusted["Evasion%"] = adjusted.get("Evasion%", 0.0) * run.guarded_evasion_multiplier
+    adjusted["Multi-Attack Chance%"] = adjusted.get("Multi-Attack Chance%", 0.0) * run.reckless_multi_multiplier
+    adjusted["CR%"] = adjusted.get("CR%", 0.0) * run.reckless_crit_multiplier
+    return adjusted
+
+
+def grow_reckless_stance(run: RunState, logs: List[str]) -> None:
+    run.reckless_multi_multiplier = round(run.reckless_multi_multiplier * 1.01, 6)
+    run.reckless_crit_multiplier = round(run.reckless_crit_multiplier * 1.01, 6)
+    run.reckless_break_multiplier = round(run.reckless_break_multiplier * 1.01, 6)
+    logs.append("Reckless pressure grows: Multi-Attack, crit, and item break chance x1.01.")
+
+
+def grow_guarded_stance(run: RunState, logs: List[str]) -> None:
+    run.guarded_evasion_multiplier = round(run.guarded_evasion_multiplier * 1.01, 6)
+    logs.append("Guarded footwork improves: Evasion x1.01.")
+
+
+def grow_steady_stance(run: RunState, logs: List[str]) -> None:
+    run.steady_atk_multiplier = round(run.steady_atk_multiplier * 1.01, 6)
+    logs.append("Steady discipline improves: ATK x1.01.")
 
 
 def player_hit(rng: random.Random, stats: dict, stance: str) -> tuple[int, List[str]]:
@@ -217,7 +256,8 @@ def enemy_dialogue(enemy: EnemyTemplate, key: str, fallback: str) -> str:
 
 
 def maybe_break_reckless_item(rng: random.Random, run: RunState, logs: List[str]) -> dict | None:
-    if rng.random() >= 0.20:
+    chance = min(0.85, 0.20 * run.reckless_break_multiplier)
+    if rng.random() >= chance:
         return None
     equipped = run.equipped_items()
     if not equipped:
@@ -347,6 +387,8 @@ def run_combat(
                         }
                     )
                     events.append(broken_event)
+                grow_reckless_stance(run, logs)
+                stats = stance_stats(effective_stats(meta, run), run)
             if hp_left <= 0:
                 break
             if attack_no == 0 and attacks > 1:
@@ -366,6 +408,9 @@ def run_combat(
             else:
                 message = line
                 logs.append(message)
+                if stance == "guarded":
+                    grow_guarded_stance(run, logs)
+                    stats = stance_stats(effective_stats(meta, run), run)
             events.append(
                 {
                     "actor": "enemy",
@@ -384,7 +429,7 @@ def run_combat(
             break
 
     if hp_left <= 0:
-        return handle_victory(rng, meta, run, enemy, enemy_hp, enemy_atk, xp_reward, coin_reward, logs, events)
+        return handle_victory(rng, meta, run, enemy, enemy_hp, enemy_atk, xp_reward, coin_reward, logs, events, stance=stance)
 
     run.current_hp = 0
     logs.append("You collapse before the enemy does.")
@@ -396,7 +441,9 @@ def run_combat(
         f"{enemy.name} has {hp_left}/{enemy_hp} HP left.",
         f"HP left: 0/{max_hp}.",
     ]
-    if run.active:
+    if run.pending_defeat_penalty:
+        summary.append("The King's healers demand a price before you can continue.")
+    elif run.active:
         summary.append(f"You recover to {run.current_hp}/{max_hp} HP.")
     if gold:
         summary.append(f"The run paid out {gold} gold.")
@@ -428,7 +475,7 @@ def run_combat_turn(
     coin_reward = int(active_fight["coins"])
     enemy_power = enemy_hp + enemy_atk * 6
     run.strongest_enemy_power = max(run.strongest_enemy_power, enemy_power)
-    stats = effective_stats(meta, run)
+    stats = stance_stats(effective_stats(meta, run), run)
     active_fight = run.active_fight or active_fight
     max_hp = int(stats["HP"])
     run.current_hp = min(max_hp, run.current_hp if run.current_hp > 0 else max_hp)
@@ -478,13 +525,15 @@ def run_combat_turn(
                     }
                 )
                 events.append(broken_event)
+            grow_reckless_stance(run, logs)
+            stats = stance_stats(effective_stats(meta, run), run)
         if hp_left <= 0:
             break
         if attack_no == 0 and attacks > 1:
             logs.append("Your gear sparks into a second attack.")
 
     if hp_left <= 0:
-        return handle_victory(rng, meta, run, enemy, enemy_hp, enemy_atk, xp_reward, coin_reward, logs, events)
+        return handle_victory(rng, meta, run, enemy, enemy_hp, enemy_atk, xp_reward, coin_reward, logs, events, stance=stance)
 
     enemy_multi = enemy.multi_attack_chance or (28.0 if "multi" in enemy.abilities else 0.0)
     enemy_attacks = attack_count(rng, enemy_multi)
@@ -496,6 +545,9 @@ def run_combat_turn(
             message = f"{attack_line} Damage: {damage}. HP: {max(0, run.current_hp)}/{max_hp}."
         else:
             message = line
+            if stance == "guarded":
+                grow_guarded_stance(run, logs)
+                stats = stance_stats(effective_stats(meta, run), run)
         logs.append(message)
         events.append(_combat_event("enemy", message, max(0, run.current_hp), max_hp, hp_left, enemy_hp, damage=damage, dodge=damage == 0))
         if run.current_hp <= 0:
@@ -512,7 +564,9 @@ def run_combat_turn(
             f"{enemy.name} has {hp_left}/{enemy_hp} HP left.",
             f"HP left: 0/{max_hp}.",
         ]
-        if run.active:
+        if run.pending_defeat_penalty:
+            summary.append("The King's healers demand a price before you can continue.")
+        elif run.active:
             summary.append(f"You recover to {run.current_hp}/{max_hp} HP.")
         if gold:
             summary.append(f"The run paid out {gold} gold.")
@@ -583,6 +637,7 @@ def handle_victory(
     logs: List[str],
     events: List[dict] | None = None,
     victory_line: str | None = None,
+    stance: str = "steady",
 ) -> CombatResult:
     stats = effective_stats(meta, run)
     hp_before_heal = run.current_hp
@@ -616,6 +671,8 @@ def handle_victory(
         run.best_item_value = max(run.best_item_value, loot.value)
 
     logs.append(victory_line or enemy_dialogue(enemy, "player_victory", f"{enemy.name} falls."))
+    if stance == "steady":
+        grow_steady_stance(run, logs)
     logs.append(f"+{xp_reward} XP, +{coin_reward} coins.")
     logs.append(f"You restore {restored} HP after the fight. HP: {run.current_hp}/{max_hp}.")
     run_success = False
@@ -771,9 +828,57 @@ def grant_consolation_reward(
     return None, buff
 
 
+DEFEAT_PRICE_ITEM = "item"
+DEFEAT_PRICE_COINS = "coins"
+DEFEAT_PRICE_STATS = "stats"
+DEFEAT_PRICE_IDS = [DEFEAT_PRICE_ITEM, DEFEAT_PRICE_COINS, DEFEAT_PRICE_STATS]
+
+
+def available_defeat_prices(run: RunState) -> list[str]:
+    chosen = set(run.defeat_prices_chosen)
+    return [price for price in DEFEAT_PRICE_IDS if price not in chosen]
+
+
+def _defeat_stat_choices(rng: random.Random, run: RunState) -> list[str]:
+    candidates = [
+        stat
+        for stat in STAT_KEYS
+        if stat not in PERMANENT_ONLY_STAT_KEYS and stat not in run.locked_stats
+    ]
+    if len(candidates) <= 2:
+        return candidates
+    return rng.sample(candidates, 2)
+
+
 def apply_defeat_penalty(rng: random.Random, meta: MetaState, run: RunState, logs: List[str]) -> int:
     run.defeats += 1
-    if run.defeats == 1:
+    options = available_defeat_prices(run)
+    if not options:
+        gold = final_gold_payout(meta, run)
+        meta.gold += gold
+        run.active = False
+        logs.append(f"The King's healers have no price left to ask. The run ends and pays out {gold} gold.")
+        return gold
+    run.pending_defeat_penalty = {
+        "options": options,
+        "stats": _defeat_stat_choices(rng, run),
+    }
+    logs.append("The King's healers drag you back from death, but they demand a price.")
+    return 0
+
+
+def resolve_defeat_penalty(meta: MetaState, run: RunState, choice: str, logs: List[str]) -> int:
+    pending = run.pending_defeat_penalty or {}
+    options = pending.get("options") or available_defeat_prices(run)
+    if choice not in options:
+        choice = options[0] if options else ""
+    if not choice:
+        gold = final_gold_payout(meta, run)
+        meta.gold += gold
+        run.active = False
+        logs.append(f"The King's healers have no price left to ask. The run ends and pays out {gold} gold.")
+        return gold
+    if choice == DEFEAT_PRICE_ITEM:
         all_items = run.inventory + run.equipped_items()
         if all_items:
             lost = max(all_items, key=lambda item: item.value)
@@ -784,24 +889,30 @@ def apply_defeat_penalty(rng: random.Random, meta: MetaState, run: RunState, log
                     if item and item.id == lost.id:
                         run.equipment[slot] = None
                         break
-            logs.append(f"First defeat curse: {lost.name}, your most valuable gear, is gone.")
+            logs.append(f"The healers claim {lost.name}, your most powerful item.")
         else:
-            logs.append("First defeat curse finds no gear to take.")
-    elif run.defeats == 2:
+            logs.append("The healers find no gear worth claiming.")
+    elif choice == DEFEAT_PRICE_COINS:
         run.coins = 0
-        logs.append("Second defeat curse: every coin in the run is gone.")
-    elif run.defeats == 3:
-        choices = rng.sample(STAT_KEYS, 2)
-        for stat in choices:
-            penalty = 18.0 if stat not in {"ATK", "HP"} else 30.0
-            run.run_debuffs[stat] = run.run_debuffs.get(stat, 0.0) + penalty
-        logs.append(f"Third defeat curse: {choices[0]} and {choices[1]} are scarred for this run.")
+        logs.append("The healers take every coin in the run.")
+    elif choice == DEFEAT_PRICE_STATS:
+        stats = [
+            stat
+            for stat in pending.get("stats", [])
+            if stat in STAT_KEYS and stat not in PERMANENT_ONLY_STAT_KEYS
+        ]
+        for stat in stats:
+            lock_stat(run, stat)
+        logs.append(f"The healers seal future increases for {', '.join(stats) if stats else 'no stats'}.")
+    run.defeat_prices_chosen.append(choice)
+    run.pending_defeat_penalty = None
+    if available_defeat_prices(run) or run.active:
+        run.current_hp = max(1, int(effective_stats(meta, run)["HP"] * 0.30))
+        logs.append(f"You recover to {run.current_hp}/{int(effective_stats(meta, run)['HP'])} HP.")
+        return 0
     else:
         gold = final_gold_payout(meta, run)
         meta.gold += gold
         run.active = False
-        logs.append(f"Fourth defeat. The run ends and pays out {gold} gold.")
+        logs.append(f"No prices remain. The run ends and pays out {gold} gold.")
         return gold
-    run.current_hp = max(1, int(effective_stats(meta, run)["HP"] * 0.30))
-    logs.append(f"You recover to {run.current_hp}/{int(effective_stats(meta, run)['HP'])} HP.")
-    return 0

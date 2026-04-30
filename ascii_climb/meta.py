@@ -5,7 +5,7 @@ from typing import Dict, Tuple
 
 from ascii_climb.content import BASE_STATS, SETS, UPGRADE_BASE_COSTS
 from ascii_climb.ilevel import gear_advantage_bonuses
-from ascii_climb.models import MetaState, RunState, STAT_KEYS, blank_stats
+from ascii_climb.models import MetaState, PERMANENT_ONLY_STAT_KEYS, RunState, STAT_KEYS, blank_stats
 from ascii_climb.relics import apply_passive_relics
 from ascii_climb.state import clamp_effective_stats, sanitize_run_state
 
@@ -16,7 +16,8 @@ SLOT_COST_MULTIPLIER = 1.35
 
 
 def upgrade_bonus_for_level(level: int) -> int:
-    return level * (level + 1) // 2
+    level = max(0, int(level))
+    return level + level // 5
 
 
 def upgrade_cost(stat: str, next_level: int) -> int:
@@ -24,7 +25,7 @@ def upgrade_cost(stat: str, next_level: int) -> int:
         raise KeyError(f"Unknown stat: {stat}")
     if next_level < 1:
         raise ValueError("Upgrade level starts at 1")
-    return UPGRADE_BASE_COSTS[stat] * (5 ** (next_level - 1))
+    return int(round(UPGRADE_BASE_COSTS[stat] * (1.22 ** (next_level - 1))))
 
 
 def buy_upgrade(meta: MetaState, stat: str) -> Tuple[bool, str]:
@@ -112,6 +113,8 @@ def effective_stats(meta: MetaState, run: RunState) -> Dict[str, float]:
     item_totals = blank_stats()
     for item in run.equipped_items():
         for stat, amount in item.stats.items():
+            if stat in PERMANENT_ONLY_STAT_KEYS:
+                continue
             item_totals[stat] = item_totals.get(stat, 0.0) + amount
 
     permanent = permanent_bonuses(meta)
@@ -124,15 +127,23 @@ def effective_stats(meta: MetaState, run: RunState) -> Dict[str, float]:
             stats[stat] = stats.get(stat, 0.0) + item_totals.get(stat, 0.0) + permanent.get(stat, 0.0)
 
     for stat, amount in set_bonuses(run).items():
+        if stat in PERMANENT_ONLY_STAT_KEYS:
+            continue
         stats[stat] = stats.get(stat, 0.0) + amount
 
     for stat, amount in gear_advantage_bonuses(run).items():
+        if stat in PERMANENT_ONLY_STAT_KEYS:
+            continue
         stats[stat] = stats.get(stat, 0.0) + amount
 
     for stat, amount in run.run_buffs.items():
+        if stat in PERMANENT_ONLY_STAT_KEYS:
+            continue
         stats[stat] = stats.get(stat, 0.0) + amount
 
     for stat, amount in run.run_debuffs.items():
+        if stat in PERMANENT_ONLY_STAT_KEYS:
+            continue
         stats[stat] = max(0.0, stats.get(stat, 0.0) - amount)
 
     for modifier in run.timed_stat_modifiers:
@@ -159,5 +170,9 @@ def final_gold_payout(meta: MetaState, run: RunState) -> int:
     subtotal = boss_gold + depth_gold + enemy_gold + item_gold + corrupted_gold + equipped_gold
 
     stats = effective_stats(meta, run)
-    greed_bonus = stats.get("Enemy Scaling%", 0.0) + stats.get("Gold Payout%", 0.0)
+    greed_bonus = (
+        stats.get("Enemy Scaling%", 0.0)
+        + stats.get("Gold Payout%", 0.0)
+        + stats.get("Gold Acquisition Boost%", 0.0)
+    )
     return max(1, int(round(subtotal * (1 + greed_bonus / 100))))

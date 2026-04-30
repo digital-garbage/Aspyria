@@ -1,7 +1,7 @@
 import random
 import unittest
 
-from ascii_climb.combat import apply_defeat_penalty, apply_vampirism, enemy_scale, run_combat
+from ascii_climb.combat import apply_defeat_penalty, apply_vampirism, enemy_scale, resolve_defeat_penalty, run_combat
 from ascii_climb.content import ENEMIES, LOCATIONS
 from ascii_climb.loot import roll_item
 from ascii_climb.loot import improve_quality
@@ -23,11 +23,12 @@ from ascii_climb.shops import add_item_to_inventory, craft_fusion, equip_item, u
 
 class CoreFormulaTests(unittest.TestCase):
     def test_upgrade_cost_bonus_and_refund(self):
-        meta = MetaState(gold=124)
-        self.assertEqual(upgrade_bonus_for_level(3), 6)
+        meta = MetaState(gold=15)
+        self.assertEqual(upgrade_bonus_for_level(3), 3)
+        self.assertEqual(upgrade_bonus_for_level(5), 6)
         self.assertEqual(upgrade_cost("ATK", 1), 4)
-        self.assertEqual(upgrade_cost("ATK", 2), 20)
-        self.assertEqual(upgrade_cost("ATK", 3), 100)
+        self.assertEqual(upgrade_cost("ATK", 2), 5)
+        self.assertEqual(upgrade_cost("ATK", 3), 6)
 
         self.assertTrue(buy_upgrade(meta, "ATK")[0])
         self.assertTrue(buy_upgrade(meta, "ATK")[0])
@@ -35,7 +36,7 @@ class CoreFormulaTests(unittest.TestCase):
         self.assertEqual(meta.gold, 0)
         self.assertEqual(meta.upgrades["ATK"], 3)
         self.assertTrue(refund_upgrade(meta, "ATK")[0])
-        self.assertEqual(meta.gold, 50)
+        self.assertEqual(meta.gold, 3)
         self.assertEqual(meta.upgrades["ATK"], 2)
 
     def test_inventory_slot_buy_and_refund(self):
@@ -45,6 +46,17 @@ class CoreFormulaTests(unittest.TestCase):
         self.assertTrue(refund_inventory_slot(meta)[0])
         self.assertEqual(meta.inventory_capacity(), 12)
         self.assertEqual(meta.gold, 87)
+
+    def test_gold_acquisition_is_permanent_only(self):
+        meta = MetaState()
+        meta.upgrades["Gold Acquisition Boost%"] = 2
+        run = RunState(seed=1, completed_bosses=1)
+        run.run_buffs["Gold Acquisition Boost%"] = 500
+        run.equipment["charm"] = Item("g", "Gold Charm", "charm", "common", "used", 1, {"Gold Acquisition Boost%": 500}, value=1)
+        self.assertEqual(effective_stats(meta, run)["Gold Acquisition Boost%"], upgrade_bonus_for_level(2))
+        boosted = final_gold_payout(meta, run)
+        meta.upgrades["Gold Acquisition Boost%"] = 0
+        self.assertGreater(boosted, final_gold_payout(meta, run))
 
 
 class GearSetTests(unittest.TestCase):
@@ -57,11 +69,11 @@ class GearSetTests(unittest.TestCase):
         run.inventory = [armor, boots, charm]
 
         equip_item(run, armor)
-        self.assertEqual(effective_stats(meta, run)["Evasion%"], 6)
+        self.assertEqual(effective_stats(meta, run)["Evasion%"], 7)
         equip_item(run, boots)
-        self.assertEqual(effective_stats(meta, run)["Evasion%"], 9)
+        self.assertEqual(effective_stats(meta, run)["Evasion%"], 10)
         equip_item(run, charm)
-        self.assertEqual(effective_stats(meta, run)["Evasion%"], 53)
+        self.assertEqual(effective_stats(meta, run)["Evasion%"], 54)
 
     def test_run_enhancement_applies_and_debuff_blocks_boost(self):
         run = RunState(seed=1)
@@ -77,9 +89,9 @@ class GearSetTests(unittest.TestCase):
         run = RunState(seed=1)
         item = Item("v", "Blood Signet", "ring", "rare", "trash", 1, {"Vampirism%": 4}, value=100)
         run.equipment["ring"] = item
-        self.assertEqual(effective_stats(meta, run)["Vampirism%"], 7)
+        self.assertEqual(effective_stats(meta, run)["Vampirism%"], 6)
         improve_quality(item)
-        self.assertGreater(effective_stats(meta, run)["Vampirism%"], 7)
+        self.assertGreater(effective_stats(meta, run)["Vampirism%"], 6)
 
     def test_vampirism_heals_after_attack_damage(self):
         run = RunState(current_hp=40)
@@ -125,6 +137,8 @@ class RunSystemTests(unittest.TestCase):
         logs = []
         for _ in range(4):
             apply_defeat_penalty(random.Random(1), meta, run, logs)
+            if run.pending_defeat_penalty:
+                resolve_defeat_penalty(meta, run, run.pending_defeat_penalty["options"][0], logs)
         self.assertFalse(run.active)
         self.assertGreater(meta.gold, 0)
 

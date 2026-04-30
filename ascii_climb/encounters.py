@@ -4,6 +4,7 @@ import random
 from dataclasses import dataclass, field
 
 from ascii_climb.content import ENCOUNTERS
+from ascii_climb.combat import apply_defeat_penalty
 from ascii_climb.loot import roll_item, roll_rarity
 from ascii_climb.meta import effective_stats
 from ascii_climb.models import Item, MetaState, QUALITIES, RANDOM_RUN_STAT_KEYS, RunState, STAT_KEYS
@@ -40,7 +41,7 @@ def random_event(
 ) -> EncounterResult | None:
     stats = effective_stats(meta, run)
     if event is None:
-        chance = min(0.20, 0.08 + min(stats.get("Luck%", 0.0) * 0.0005, 0.12))
+        chance = min(0.24, 0.10 + min(stats.get("Luck%", 0.0) * 0.0005, 0.14))
         if rng.random() >= chance:
             return None
         candidates = [
@@ -109,6 +110,17 @@ def _apply_effect(
         amount = int(effect.get("amount", 0))
         run.coins += amount
         result.logs.append(f"+{amount} coins.")
+    elif effect_type == "lose_coins_fraction":
+        fraction = max(0.0, min(1.0, float(effect.get("fraction", 0.0))))
+        amount = int(run.coins * fraction)
+        run.coins = max(0, run.coins - amount)
+        result.logs.append(f"-{amount} coins.")
+    elif effect_type == "heal_percent":
+        fraction = max(0.0, float(effect.get("fraction", 0.0)))
+        max_hp = max(1, int(effective_stats(meta, run).get("HP", 1.0)))
+        old_hp = run.current_hp
+        run.current_hp = min(max_hp, run.current_hp + max(1, int(max_hp * fraction)))
+        result.logs.append(f"Restored {run.current_hp - old_hp} HP.")
     elif effect_type == "reward_gold":
         amount = int(effect.get("amount", 0))
         meta.gold += amount
@@ -134,6 +146,17 @@ def _apply_effect(
         amount = float(effect.get("amount", 0))
         if safe_apply_debuff(run, stat, amount, effective_stats(meta, run).get(stat or "", 0.0)):
             result.logs.append(f"{stat} -{amount:g}.")
+    elif effect_type == "timed_stat_modifier":
+        stat = effect.get("stat") or rng.choice(RANDOM_RUN_STAT_KEYS)
+        run.timed_stat_modifiers.append(
+            {
+                "stat": stat,
+                "multiplier": float(effect.get("multiplier", 1.0)),
+                "remaining_fights": int(effect.get("fights", 2)),
+                "label": result.title,
+            }
+        )
+        result.logs.append(f"{stat} x{float(effect.get('multiplier', 1.0)):g} for {int(effect.get('fights', 2))} fights.")
     elif effect_type == "choice_list":
         choices = effect.get("choices", [])
         if not choices:
@@ -188,18 +211,27 @@ def _apply_handler(
             run.coins -= loss
             result.logs.append(f"You pay {loss} coins and the bandit lets you pass.")
         else:
-            win_chance = min(0.9, 0.45 + stats.get("ATK", 0.0) / 220 + stats.get("Evasion%", 0.0) / 300)
+            win_chance = min(0.82, 0.34 + stats.get("ATK", 0.0) / 260 + stats.get("Evasion%", 0.0) / 360)
+            max_hp = max(1, int(stats.get("HP", 1.0)))
             if rng.random() < win_chance:
+                hp_loss = max(1, int(max_hp * rng.uniform(0.06, 0.14)))
+                run.current_hp = max(1, run.current_hp - hp_loss)
                 result.logs.append("You beat the bandit back into the brush.")
+                result.logs.append(f"He still cuts you for {hp_loss} HP before fleeing.")
                 if rng.random() < float(params.get("legendary_chance", 0.25)):
                     result.loot = roll_item(rng, run, stats.get("Luck%", 0.0), stats.get("Enemy Scaling%", 0.0), force_rarity="legendary")
                     result.logs.append(f"The bandit drops {result.loot.label()}.")
             else:
                 loss = int(run.coins * 0.35)
-                hp_loss = max(1, int(stats.get("HP", 1.0) * 0.18))
+                hp_loss = max(1, int(max_hp * rng.uniform(0.28, 0.46)))
                 run.coins = max(0, run.coins - loss)
-                run.current_hp = max(1, run.current_hp - hp_loss)
-                result.logs.append(f"The bandit wounds you for {hp_loss} HP and steals {loss} coins.")
+                run.current_hp -= hp_loss
+                if run.current_hp <= 0:
+                    run.current_hp = 0
+                    result.logs.append(f"The bandit defeats you, wounds you for {hp_loss} HP, and steals {loss} coins.")
+                    apply_defeat_penalty(rng, meta, run, result.logs)
+                else:
+                    result.logs.append(f"The bandit wounds you for {hp_loss} HP and steals {loss} coins.")
     elif handler == "pitfall":
         stat = rng.choice(RANDOM_RUN_STAT_KEYS)
         run.timed_stat_modifiers.append(

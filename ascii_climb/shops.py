@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 from typing import Tuple
 
-from ascii_climb.loot import improve_quality, repair_cost, roll_item, sell_value
+from ascii_climb.loot import caravan_price, improve_quality, repair_cost, roll_item, sell_value
 from ascii_climb.models import Item, MetaState, QUALITIES, RunState
 
 
@@ -121,7 +121,7 @@ def get_or_create_random_gear_offer(
         enemy_scaling,
         merchant_pity=float(run.random_gear_failures),
     )
-    cost = max(8, item.value)
+    cost = caravan_price(item)
     run.random_gear_offer = item.to_dict()
     run.random_gear_offer_cost = cost
     return item, cost
@@ -139,7 +139,7 @@ def repair_item(run: RunState, item: Item) -> Tuple[bool, str]:
     if run.coins < cost:
         return False, f"Need {cost} coins, you have {run.coins}."
     run.coins -= cost
-    improve_quality(item)
+    improve_quality(item, run.locked_stats)
     return True, f"Improved {item.name} to {item.quality} for {cost} coins."
 
 
@@ -157,7 +157,8 @@ MEDKITS = {
 def medkit_cost(run: RunState, size: str) -> int:
     if size not in MEDKITS:
         raise KeyError(f"Unknown medkit size: {size}")
-    return int(MEDKITS[size]["base_cost"] * (2 ** run.medkits_bought))
+    shared = int(run.medkits_bought)
+    return int(round(MEDKITS[size]["base_cost"] * (1.18 ** shared)))
 
 
 def buy_medkit(run: RunState, max_hp: int, size: str) -> Tuple[bool, str]:
@@ -166,6 +167,7 @@ def buy_medkit(run: RunState, max_hp: int, size: str) -> Tuple[bool, str]:
         return False, f"Need {cost} coins, you have {run.coins}."
     run.coins -= cost
     run.medkits_bought += 1
+    run.medkits_bought_by_size[size] = int(run.medkits_bought_by_size.get(size, 0)) + 1
     if size == "large":
         healed = max(0, max_hp - run.current_hp)
         run.current_hp = max_hp

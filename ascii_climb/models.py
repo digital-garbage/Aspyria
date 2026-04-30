@@ -17,10 +17,14 @@ STAT_KEYS = [
     "XP Boost%",
     "Enemy Scaling%",
     "Coin Acquisition Boost%",
+    "Gold Acquisition Boost%",
     "Vampirism%",
 ]
 
-RANDOM_RUN_STAT_KEYS = [stat for stat in STAT_KEYS if stat not in {"Enemy Scaling%", "Vampirism%"}]
+PERMANENT_ONLY_STAT_KEYS = {"Gold Acquisition Boost%"}
+RANDOM_RUN_STAT_KEYS = [
+    stat for stat in STAT_KEYS if stat not in {"Enemy Scaling%", "Vampirism%"} | PERMANENT_ONLY_STAT_KEYS
+]
 
 STAT_DESCRIPTIONS = {
     "ATK": "Increases the damage you deal with each attack.",
@@ -35,6 +39,7 @@ STAT_DESCRIPTIONS = {
     "XP Boost%": "Increases XP gained from defeated enemies.",
     "Enemy Scaling%": "Raises enemy pressure, rewards, and possible item levels.",
     "Coin Acquisition Boost%": "Increases coins gained during a run.",
+    "Gold Acquisition Boost%": "Increases gold gained from finished or retired runs.",
     "Vampirism%": "Restores a percentage of attack damage as HP after each hit.",
     "Damage Reduction%": "Reduces incoming damage before other penalties.",
     "Damage Taken%": "Increases incoming damage from curses and risky effects.",
@@ -54,6 +59,7 @@ STAT_LABELS = {
     "XP Boost%": "XP Boost",
     "Enemy Scaling%": "Enemy Scaling",
     "Coin Acquisition Boost%": "Coin Acquisition",
+    "Gold Acquisition Boost%": "Gold Acquisition",
     "Vampirism%": "Vampirism",
     "Damage Reduction%": "Damage Reduction",
     "Damage Taken%": "Damage Taken",
@@ -247,7 +253,16 @@ class RunState:
     random_gear_offer_cost: int = 0
     timed_stat_modifiers: List[dict] = field(default_factory=list)
     medkits_bought: int = 0
+    medkits_bought_by_size: Dict[str, int] = field(default_factory=dict)
     enemies_killed: int = 0
+    defeat_prices_chosen: List[str] = field(default_factory=list)
+    pending_defeat_penalty: dict | None = None
+    extra_level_options_chosen: int = 0
+    steady_atk_multiplier: float = 1.0
+    guarded_evasion_multiplier: float = 1.0
+    reckless_multi_multiplier: float = 1.0
+    reckless_crit_multiplier: float = 1.0
+    reckless_break_multiplier: float = 1.0
 
     def equipped_items(self) -> List[Item]:
         return [item for item in self.equipment.values() if item is not None]
@@ -298,7 +313,16 @@ class RunState:
             "random_gear_offer_cost": self.random_gear_offer_cost,
             "timed_stat_modifiers": self.timed_stat_modifiers,
             "medkits_bought": self.medkits_bought,
+            "medkits_bought_by_size": self.medkits_bought_by_size,
             "enemies_killed": self.enemies_killed,
+            "defeat_prices_chosen": self.defeat_prices_chosen,
+            "pending_defeat_penalty": self.pending_defeat_penalty,
+            "extra_level_options_chosen": self.extra_level_options_chosen,
+            "steady_atk_multiplier": self.steady_atk_multiplier,
+            "guarded_evasion_multiplier": self.guarded_evasion_multiplier,
+            "reckless_multi_multiplier": self.reckless_multi_multiplier,
+            "reckless_crit_multiplier": self.reckless_crit_multiplier,
+            "reckless_break_multiplier": self.reckless_break_multiplier,
         }
 
     @classmethod
@@ -346,7 +370,18 @@ class RunState:
             random_gear_offer_cost=int(data.get("random_gear_offer_cost", 0)),
             timed_stat_modifiers=list(data.get("timed_stat_modifiers", [])),
             medkits_bought=int(data.get("medkits_bought", 0)),
+            medkits_bought_by_size={
+                str(key): int(value) for key, value in data.get("medkits_bought_by_size", {}).items()
+            },
             enemies_killed=int(data.get("enemies_killed", 0)),
+            defeat_prices_chosen=[str(value) for value in data.get("defeat_prices_chosen", [])],
+            pending_defeat_penalty=data.get("pending_defeat_penalty"),
+            extra_level_options_chosen=int(data.get("extra_level_options_chosen", 0)),
+            steady_atk_multiplier=float(data.get("steady_atk_multiplier", 1.0)),
+            guarded_evasion_multiplier=float(data.get("guarded_evasion_multiplier", 1.0)),
+            reckless_multi_multiplier=float(data.get("reckless_multi_multiplier", 1.0)),
+            reckless_crit_multiplier=float(data.get("reckless_crit_multiplier", 1.0)),
+            reckless_break_multiplier=float(data.get("reckless_break_multiplier", 1.0)),
         )
 
 

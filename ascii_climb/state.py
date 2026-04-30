@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ascii_climb.models import Item, RunState, STAT_KEYS
+from ascii_climb.models import Item, PERMANENT_ONLY_STAT_KEYS, RunState, STAT_KEYS
 
 
 VALID_STATS = set(STAT_KEYS) | {"Damage Reduction%", "Damage Taken%", "Gold Payout%"}
@@ -28,6 +28,19 @@ def sanitize_run_state(run: RunState | None) -> None:
     run.run_buffs = sanitize_stat_map(run.run_buffs)
     run.run_debuffs = sanitize_stat_map(run.run_debuffs)
     run.locked_stats = [stat for stat in run.locked_stats if is_valid_stat(stat)]
+    run.defeat_prices_chosen = [
+        choice for choice in run.defeat_prices_chosen if choice in {"item", "coins", "stats"}
+    ]
+    if run.pending_defeat_penalty:
+        stats = [
+            stat for stat in run.pending_defeat_penalty.get("stats", [])
+            if is_valid_stat(stat) and stat != "Gold Acquisition Boost%"
+        ][:2]
+        options = [
+            option for option in run.pending_defeat_penalty.get("options", [])
+            if option in {"item", "coins", "stats"} and option not in run.defeat_prices_chosen
+        ]
+        run.pending_defeat_penalty = {"stats": stats, "options": options} if options else None
     cleaned_modifiers = []
     for modifier in run.timed_stat_modifiers:
         stat = modifier.get("stat")
@@ -80,6 +93,8 @@ def sanitize_active_fight(fight: dict | None) -> dict | None:
 def safe_apply_buff(run: RunState, stat: str | None, amount: float) -> bool:
     if not is_valid_stat(stat):
         return False
+    if stat in PERMANENT_ONLY_STAT_KEYS:
+        return False
     if is_stat_locked(run, stat):
         return False
     run.run_buffs[stat] = max(0.0, run.run_buffs.get(stat, 0.0) + float(amount))
@@ -88,6 +103,8 @@ def safe_apply_buff(run: RunState, stat: str | None, amount: float) -> bool:
 
 def safe_apply_debuff(run: RunState, stat: str | None, amount: float, current_value: float | None = None) -> bool:
     if not is_valid_stat(stat):
+        return False
+    if stat in PERMANENT_ONLY_STAT_KEYS:
         return False
     amount = max(0.0, float(amount))
     if current_value is not None:
@@ -103,7 +120,7 @@ def is_stat_locked(run: RunState, stat: str | None) -> bool:
 
 
 def lock_stat(run: RunState, stat: str | None) -> bool:
-    if not is_valid_stat(stat) or is_stat_locked(run, stat):
+    if not is_valid_stat(stat) or stat in PERMANENT_ONLY_STAT_KEYS or is_stat_locked(run, stat):
         return False
     run.locked_stats.append(stat)
     run.locked_stats.sort()

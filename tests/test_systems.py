@@ -4,16 +4,18 @@ import random
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from ascii_climb import content
 from ascii_climb.i18n import Translator
-from ascii_climb.encounters import apply_encounter
-from ascii_climb.models import GameSettings, Item, LifetimeStats, RunState, SaveData
+from ascii_climb.encounters import apply_encounter, random_event
+from ascii_climb.models import GameSettings, Item, LifetimeStats, MetaState, RunState, SaveData
 from ascii_climb.save import (
     create_save_slot,
     delete_save_slot,
     import_legacy_save,
     list_save_slots,
+    load_profile,
     load_save_slot,
     load_settings,
     rename_save_slot,
@@ -41,6 +43,9 @@ class SaveSlotTests(unittest.TestCase):
             loaded.meta.gold = 99
             save_save_slot(slot_id, "Better Save", loaded, save_dir)
             self.assertEqual(load_save_slot(slot_id, save_dir).meta.gold, 99)
+            payload = json.loads((save_dir / f"{slot_id}.json").read_text(encoding="utf-8"))
+            self.assertNotIn("meta", payload["save"])
+            self.assertEqual(load_profile(save_dir / "profile.json").gold, 99)
 
             delete_save_slot(slot_id, save_dir)
             self.assertEqual(list_save_slots(save_dir), [])
@@ -194,6 +199,21 @@ class EncounterTests(unittest.TestCase):
         self.assertEqual(data.run.run_buffs["Luck%"], 4)
         self.assertEqual(data.run.run_debuffs["HP"], 1)
 
+    def test_bandit_fight_can_cause_defeat(self):
+        run = RunState(seed=8, coins=100, current_hp=3)
+        encounter = {
+            "title": "Bandit's Toll",
+            "body": "A bandit blocks your way.",
+            "handler": "bandit_toll",
+            "params": {"toll_fraction": 0.9, "legendary_chance": 0.0},
+            "choices": [{"id": "pay", "label": "Pay"}, {"id": "fight", "label": "Fight him"}],
+        }
+        result = random_event(random.Random(0), MetaState(), run, event=encounter, choice_index=1)
+        self.assertIsNotNone(result)
+        self.assertEqual(run.defeats, 1)
+        self.assertIn("defeats you", "\n".join(result.logs))
+        self.assertLess(run.coins, 100)
+
 
 class TranslationTests(unittest.TestCase):
     def test_russian_keys_match_english_and_fallback_works(self):
@@ -219,6 +239,7 @@ class DocumentationTests(unittest.TestCase):
 class QtSmokeTests(unittest.TestCase):
     def test_main_menu_and_resolution_smoke(self):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PyQt6.QtCore import QPoint
         from PyQt6.QtWidgets import QApplication, QLabel, QPushButton
         from ascii_climb.combat import run_combat
         from ascii_climb.models import MetaState
@@ -279,6 +300,52 @@ class QtSmokeTests(unittest.TestCase):
         self.assertTrue(window.handle_slot_drop("inventory|0|drag-weapon|", window.equipment_slots["weapon"]))
         self.assertEqual(window.data.run.equipment["weapon"].id, "drag-weapon")
         self.assertEqual(window.data.run.inventory, [])
+        self.assertTrue(window.handle_inventory_table_drop("equipment|-1|drag-weapon|weapon", 0))
+        self.assertIsNone(window.data.run.equipment["weapon"])
+        self.assertEqual(window.data.run.inventory[0].id, "drag-weapon")
+        second = Item("drag-armor", "Drag Plate", "armor", "rare", "used", 1, {"HP": 5}, value=12)
+        window.data.run.inventory.append(second)
+        window.refresh_all()
+        self.assertTrue(window.handle_inventory_table_drop("inventory|0|drag-weapon|", 1))
+        self.assertEqual([item.id for item in window.data.run.inventory], ["drag-armor", "drag-weapon"])
+        with patch("ascii_climb.qt_app.QMessageBox.information"):
+            self.assertFalse(window.handle_slot_drop("inventory|0|drag-armor|", window.equipment_slots["weapon"]))
+        self.assertIsNone(window.data.run.equipment["weapon"])
+        window.inventory_table.selectRow(0)
+        self.assertFalse(window.inventory_sell_button.isHidden())
+        window.equipment_slots["weapon"].drag_start = QPoint(0, 0)
+        self.assertFalse(window.equipment_slots["weapon"].drag_distance_reached(QPoint(1, 1)))
+        self.assertTrue(window.equipment_slots["weapon"].drag_distance_reached(QPoint(QApplication.startDragDistance(), 0)))
+        hp_gear = Item("hp-gear", "Vital Blade", "weapon", "common", "used", 1, {"HP": 10}, value=20)
+        window.data.run.equipment["weapon"] = hp_gear
+        window.data.run.current_hp = 25
+        coins_before = window.data.run.coins
+        window.refresh_all()
+        window.slot_clicked(window.equipment_slots["weapon"])
+        self.assertFalse(window.equipment_slots["weapon"].sell_button.isHidden())
+        window.sell_slot_item(window.equipment_slots["weapon"])
+        self.assertIsNone(window.data.run.equipment["weapon"])
+        self.assertGreater(window.data.run.coins, coins_before)
+        self.assertLessEqual(window.data.run.current_hp, 15)
+        window.selected_inventory_ids = {window.data.run.inventory[0].id}
+        window.refresh_shop_tab()
+        window.refresh_inventory_action_buttons()
+        self.assertIn("coins", window.shop_inventory_improve_button.text())
+        self.assertIn("coins", window.buy_random_button.text())
+        self.assertIn("coins", window.medkit_buttons["small"].text())
+        self.assertNotIn("Luck:", window.shop_status.text())
+        self.assertNotIn("Enemy Scaling", window.shop_status.text())
+        self.assertNotIn("Medkits:", window.shop_status.text())
+        window.refresh_game_page()
+        self.assertIn("coins", window.scout_button.text())
+        self.assertTrue(window.stats_table.hasMouseTracking())
+        self.assertTrue(window.stats_table.viewport().hasMouseTracking())
+        luck_description = next(
+            window.stats_table.item(row, 2).toolTip()
+            for row in range(window.stats_table.rowCount())
+            if window.stats_table.item(row, 0).text() == "Luck%"
+        )
+        self.assertIn("higher item rarity", luck_description)
         window.settings.resolution = "1366x768"
         window.settings.fullscreen = False
         window.apply_resolution()
